@@ -1,0 +1,25 @@
+# Zmienne środowiskowe — NIGDY nie commituj
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Dane i modele — za duże na GitHub
+*.pdf
+*.csv
+*.pkl
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
+
+# Logi
+*.log

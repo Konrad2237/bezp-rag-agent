@@ -1,0 +1,95 @@
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel
+from middleware import get_current_user
+from agents.graph import run_agent
+from agents.extraction import run_extraction_agent
+from agents.summarizer import run_summarizer_agent
+from services.memory import get_user_profile, get_message_count
+from config import supabase
+import asyncio
+
+router = APIRouter()
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+async def background_tasks(user_id: str, user_message: str, agent_response: str, user_profile: dict):
+    """Uruchamia Extraction i ewentualnie Summarizer w tle."""
+    # Extraction Agent — po każdej wiadomości
+    await run_in_threadpool(
+        run_extraction_agent,
+        user_id, user_message, agent_response, user_profile
+    )
+
+    # Summarizer — co 10 wiadomości
+    count = await run_in_threadpool(get_message_count, user_id)
+    if count > 0 and count % 10 == 0:
+        await run_in_threadpool(run_summarizer_agent, user_id)
+
+
+def check_rate_limit(user_id: str):
+    """
+    Sprawdza rate limit: max 30 wiadomości dziennie + max 5 na minutę.
+    Rzuca HTTPException 429 jeśli limit przekroczony.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    day_ago = (now - timedelta(days=1)).isoformat()
+    minute_ago = (now - timedelta(minutes=1)).isoformat()
+
+    # Dzienny limit
+    daily = supabase.table("messages")\
+        .select("id", count="exact")\
+        .eq("user_id", user_id)\
+        .eq("role", "user")\
+        .gte("created_at", day_ago)\
+        .execute()
+
+    if daily.count and daily.count >= 30:
+        raise HTTPException(
+            status_code=429,
+            detail="Dzienny limit wiadomości wyczerpany. Wróć jutro."
+        )
+
+    # Per-minutowy limit
+    per_minute = supabase.table("messages")\
+        .select("id", count="exact")\
+        .eq("user_id", user_id)\
+        .eq("role", "user")\
+        .gte("created_at", minute_ago)\
+        .execute()
+
+    if per_minute.count and per_minute.count >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail="Za dużo wiadomości naraz. Poczekaj chwilę."
+        )
+
+
+@router.post("/")
+async def chat(
+    body: ChatRequest,
+    user_id: str = Depends(get_current_user)
+):
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="Wiadomość nie może być pusta")
+    if len(body.message) > 2000:
+        raise HTTPException(status_code=400, detail="Wiadomość za długa (max 2000 znaków)")
+
+    # Rate limit
+    check_rate_limit(user_id)
+
+    # Pobierz profil przed uruchomieniem agenta (potrzebny do Extraction)
+    user_profile = await run_in_threadpool(get_user_profile, user_id)
+
+    # Uruchom agenta
+    response = await run_in_threadpool(run_agent, user_id=user_id, message=body.message)
+
+    # Background tasks — nie blokują odpowiedzi
+    asyncio.create_task(background_tasks(user_id, body.message, response, user_profile))
+
+    return {"response": response}
