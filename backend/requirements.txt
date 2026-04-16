@@ -3,9 +3,9 @@ uvicorn
 python-dotenv
 supabase
 openai
-anthropic
+anthropic>=0.39.0,<1.0.0
 langgraph
-langchain-anthropic
+langchain-anthropic==0.3.0
 langchain-core
 pydantic
 pydantic-settings
