@@ -32,6 +32,10 @@ export default function LoginPage() {
   async function handleLogin() {
     setError('')
     setMessage('')
+    if (!email.trim() || !password) {
+      setError('Podaj email i hasło')
+      return
+    }
     setLoading(true)
     try {
       const res = await fetch(`${API_URL}/auth/login`, {
@@ -40,7 +44,18 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Błąd logowania')
+      if (!res.ok) {
+        const detail = typeof data.detail === 'string'
+          ? data.detail
+          : Array.isArray(data.detail)
+            ? data.detail.map((e: { msg: string }) => e.msg).join(', ')
+            : 'Błąd logowania'
+        const msg = detail
+          .replace('Invalid login credentials', 'Błędny email lub hasło')
+          .replace('Email not confirmed', 'Email nie został potwierdzony — sprawdź skrzynkę')
+          .replace('User already registered', 'Konto z tym emailem już istnieje')
+        throw new Error(msg)
+      }
 
       localStorage.setItem('bezp_token', data.access_token)
 
