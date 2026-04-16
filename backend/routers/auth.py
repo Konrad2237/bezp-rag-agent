@@ -9,6 +9,8 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
+    imie: str
+    nazwisko: str
 
 
 class LoginRequest(BaseModel):
@@ -26,7 +28,21 @@ async def register(body: RegisterRequest):
         })
         if response.user is None:
             raise HTTPException(status_code=400, detail="Błąd rejestracji")
-        return {"message": "Zarejestrowano. Sprawdź email.", "user_id": response.user.id}
+
+        # Jeśli user już istnieje, Supabase zwraca go bez sesji i bez tożsamości
+        if not response.user.identities:
+            raise HTTPException(status_code=400, detail="Konto z tym adresem email już istnieje.")
+
+        supabase.table("user_profiles").insert({
+            "user_id": response.user.id,
+            "imie": body.imie,
+            "nazwisko": body.nazwisko,
+            "quiz_completed": False,
+        }).execute()
+
+        return {"message": "Konto założone! Wysłaliśmy link aktywacyjny na Twój email — potwierdź go przed pierwszym logowaniem."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -52,6 +68,6 @@ async def login(body: LoginRequest):
 @router.get("/me")
 async def me(user_id: str = Depends(get_current_user)):
     """Sprawdza czy zalogowany user ma wypełniony profil."""
-    response = supabase.table("user_profiles").select("user_id").eq("user_id", user_id).execute()
-    has_profile = len(response.data) > 0
+    response = supabase.table("user_profiles").select("quiz_completed").eq("user_id", user_id).execute()
+    has_profile = len(response.data) > 0 and response.data[0].get("quiz_completed") is True
     return {"user_id": user_id, "has_profile": has_profile}
