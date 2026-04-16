@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from config import supabase
+from middleware import get_current_user
 
 router = APIRouter()
 
@@ -46,3 +47,11 @@ async def login(body: LoginRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.get("/me")
+async def me(user_id: str = Depends(get_current_user)):
+    """Sprawdza czy zalogowany user ma wypełniony profil."""
+    response = supabase.table("user_profiles").select("user_id").eq("user_id", user_id).execute()
+    has_profile = len(response.data) > 0
+    return {"user_id": user_id, "has_profile": has_profile}
