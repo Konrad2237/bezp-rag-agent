@@ -2,7 +2,8 @@ import json
 from config import claude_client, supabase
 
 SUMMARIZER_PROMPT = """Jesteś systemem zarządzania pamięcią dla AI trenera personalnego.
-Zaktualizuj podsumowanie rozmów użytkownika na podstawie nowych wiadomości.
+Twoim zadaniem jest zaktualizowanie podsumowania rozmów z użytkownikiem
+na podstawie nowych wiadomości.
 
 POPRZEDNIE PODSUMOWANIE:
 {previous_summary}
@@ -17,25 +18,42 @@ TWOJE ZADANIE
 Stwórz nowe, zaktualizowane podsumowanie które:
 1. Zachowuje ważne fakty z poprzedniego podsumowania (jeśli nadal aktualne)
 2. Dodaje nowe ważne informacje z ostatnich wiadomości
-3. Usuwa informacje które są już nieaktualne
+3. Usuwa informacje które zostały zaktualizowane lub są już nieaktualne
 4. Ma maksymalnie 250 słów
 
-CO WARTO ZACHOWAĆ:
-✓ Postępy treningowe (rekordy, osiągnięcia)
-✓ Zmiany w planie i ich powody
-✓ Aktualne kontuzje
+════════════════════════════════════════
+CO WARTO ZACHOWAĆ W PODSUMOWANIU
+════════════════════════════════════════
+
+✓ Postępy treningowe (nowe rekordy, osiągnięcia)
+✓ Zmiany w planie treningowym i ich powody
+✓ Aktualne kontuzje lub dolegliwości
 ✓ Zmiany celu lub motywacji
-✓ Rzeczy które user lubi lub nie lubi
-✓ O co agent dopytywał (żeby nie pytać dwa razy)
+✓ Ważny kontekst ("user wrócił po 2 tygodniach choroby")
+✓ Rzeczy które user lubi lub nie lubi robić
+✓ Specyficzne preferencje dotyczące treningu
+✓ O co agent dopytywał (żeby nie pytać dwa razy o to samo)
 
-NIE ZACHOWUJ:
-✗ Pytań o technikę ćwiczeń (wiedza ogólna)
-✗ Rozmów bez znaczenia dla przyszłych sesji
-✗ Informacji które są już w profilu usera
+✗ NIE ZACHOWUJ: pytań o technikę ćwiczeń
+✗ NIE ZACHOWUJ: ogólnych rozmów bez znaczenia dla przyszłych sesji
+✗ NIE ZACHOWUJ: informacji które są już w profilu usera
 
-FORMAT: Odpowiedz WYŁĄCZNIE treścią podsumowania.
-Bez nagłówków, bez JSON. Pisz w trzeciej osobie ("User...").
-Styl telegraficzny — fakty, nie opisy."""
+════════════════════════════════════════
+FORMAT ODPOWIEDZI
+════════════════════════════════════════
+
+Odpowiedz WYŁĄCZNIE treścią podsumowania. Bez nagłówków, bez JSON,
+bez komentarzy. Pisz w trzeciej osobie ("User...", "Użytkownik...").
+Zachowaj styl telegraficzny — fakty, nie opisy.
+
+Przykład dobrego podsumowania:
+"User trenuje od 3 tygodni wg planu FBW 3x tydzień. Zaczął od 40kg na
+ławce, aktualnie robi 55kg. Dwa tygodnie temu skarżył się na ból barku
+lewego przy wyciskaniu — agent zaproponował wyciskanie hantlami zamiast
+sztangi, user potwierdził że pomogło. Celem jest masa mięśniowa. User
+preferuje krótkie treningi (45-60 min). Nie lubi przysiadu — pracują nad
+techniką. Ostatnio dodał kreatynę do suplementacji. Agent pytał już
+o sen (7h, dobrze) i dietę (nie pilnuje)." """
 
 
 def run_summarizer_agent(user_id: str):

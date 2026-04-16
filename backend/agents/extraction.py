@@ -1,7 +1,7 @@
 import json
 from config import claude_client, supabase
 
-EXTRACTION_PROMPT = """Jesteś systemem ekstrakcji danych. Przeanalizuj ostatnią wymianę wiadomości i zdecyduj czy pojawiły się nowe ważne informacje o użytkowniku.
+EXTRACTION_PROMPT = """Jesteś systemem ekstrakcji danych. Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości i zdecydować czy pojawiły się nowe ważne informacje o użytkowniku.
 
 AKTUALNY PROFIL UŻYTKOWNIKA:
 {user_profile}
@@ -17,11 +17,13 @@ CO JEST WARTE ZAPISANIA
 Zapisuj jeśli użytkownik podał lub zmienił:
 - Wagę ciała, wzrost, wiek
 - Cel treningowy (masa / redukcja / siła / kondycja)
-- Liczbę dni treningowych
+- Liczbę dni treningowych w tygodniu
 - Nową kontuzję lub dolegliwość
 - Wyzdrowienie z kontuzji
-- Nowe ograniczenia
-- Osiągnięcie treningowe (rekord, pierwszy pull-up itp.)
+- Zmianę poziomu zaawansowania
+- Nowe ograniczenia (brak sprzętu, zmiana grafiku pracy)
+- Osiągnięcie treningowe (pierwszy pull-up, nowy rekord na ławce itp.)
+- Deklarację zmiany celu
 - Informację o jakości snu (pole: jakosc_snu)
 - Informację o poziomie stresu (pole: poziom_stresu)
 - Informację o diecie (pole: dieta)
@@ -29,25 +31,52 @@ Zapisuj jeśli użytkownik podał lub zmienił:
 - Przeszłe kontuzje (pole: kontuzje_przeszle)
 - Leki (pole: leki)
 
-WAŻNE: Rozróżniaj wagę ciała od ciężaru treningowego:
-- "Ważę X kg" → waga ciała → pole: waga
-- "Podnoszę X kg / robię X na ławce" → osiągnięcie → pole: osiagniecia
+════════════════════════════════════════
+WAŻNE ROZRÓŻNIENIE: WAGA CIAŁA vs CIĘŻAR TRENINGOWY
+════════════════════════════════════════
+
+Rozróżniaj wagę ciała od ciężaru na sztandze/maszynie:
+- "Ważę X kg" / "moja waga to X" / "zrzuciłem do X" → WAGA CIAŁA → pole: waga
+- "Wziąłem X kg" / "podniosłem X" / "robię X na ławce" / "przysiad X" → CIĘŻAR TRENINGOWY → pole: osiagniecia
+
+W razie wątpliwości: NIE aktualizuj wagi ciała. Lepiej pominąć niż zapisać błędnie.
+
+════════════════════════════════════════
+CO NIE JEST WARTE ZAPISANIA
+════════════════════════════════════════
 
 NIE ZAPISUJ:
-- Pytań o technikę (wiedza ogólna, nie dane o userze)
-- Jednorazowych sytuacji ("dzisiaj słabo spałem") chyba że regularny problem
-- Emocji chwilowych
+- Pytań o technikę ćwiczeń (to wiedza ogólna, nie dane o userze)
+- Jednorazowych sytuacji bez znaczenia długoterminowego ("dzisiaj słabo spałem")
+  CHYBA ŻE user mówi że to regularny problem ("od miesiąca źle sypiam")
+- Emocji chwilowych ("dzisiaj nie chce mi się trenować")
+- Pytań które user zadaje (to nie są fakty o nim)
 
-WYKRYWANIE KONFLIKTÓW:
-Oznacz konflikt jeśli:
-- Zmiana wagi ciała > 10kg vs profil
-- Zmiana celu (np. z masy na redukcję)
+════════════════════════════════════════
+WYKRYWANIE KONFLIKTÓW
+════════════════════════════════════════
 
-KONTUZJE — ZAWSZE ZAPISUJ, nawet jeśli nie pewien czy trwałe.
+Oznacz konflikt (conflict_with_profile = true) jeśli:
+- Nowa wartość jest sprzeczna z tym co jest w profilu
+- Zmiana wagi ciała przekracza 10kg w stosunku do profilu
+- Zmiana celu (np. profil: masa, user mówi: redukcja)
+
+Przy konflikcie NIE nadpisuj profilu. Zapisz konflikt — agent zapyta usera
+o potwierdzenie w następnej wiadomości.
+
+════════════════════════════════════════
+KONTUZJE — ZAWSZE ZAPISUJ
+════════════════════════════════════════
+
+Kontuzje i dolegliwości ZAWSZE zapisuj, nawet jeśli nie jesteś pewien
+czy to trwałe. Lepiej zapisać i agent dopyta, niż pominąć i agent
+zaproponuje ćwiczenie które pogorszy stan.
 
 ════════════════════════════════════════
 FORMAT ODPOWIEDZI — WYŁĄCZNIE JSON
 ════════════════════════════════════════
+
+Odpowiedz WYŁĄCZNIE w formacie JSON. Bez żadnego tekstu przed ani po.
 
 Jeśli nie ma nic do zapisania:
 {{"has_updates": false}}
@@ -55,8 +84,8 @@ Jeśli nie ma nic do zapisania:
 Jeśli są aktualizacje:
 {{"has_updates": true, "updates": {{"pole": "wartość"}}, "conflict_with_profile": false, "conflict_description": null}}
 
-Jeśli konflikt:
-{{"has_updates": true, "updates": {{"pole": "wartość"}}, "conflict_with_profile": true, "conflict_description": "Opis konfliktu"}}
+Jeśli nowa informacja jest sprzeczna z profilem:
+{{"has_updates": true, "updates": {{"pole": "wartość"}}, "conflict_with_profile": true, "conflict_description": "Opis konfliktu i co zapytać usera."}}
 
 Możliwe pola w updates:
 waga, wzrost, wiek, cel, dni_treningowe, czas_treningu, miejsce_treningu,
