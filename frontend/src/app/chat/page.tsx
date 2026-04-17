@@ -7,6 +7,21 @@ import remarkGfm from 'remark-gfm'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+const THINKING_PHRASES = [
+  'Pitbul myśli...',
+  'Pitbul wytęża szare komórki...',
+  'Słychać jak trybiki w głowie zgrzytają...',
+  'Pitbul myśli aż dym z uszu idzie...',
+  'Słychać tarcie opon w głowie...',
+  'Trwa heroiczna walka o jedną myśl...',
+  'Pali się sprzęgło w głowie...',
+  'Zwarcie intelektualne w toku...',
+]
+
+function randomPhrase() {
+  return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -17,6 +32,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [thinkingPhrase, setThinkingPhrase] = useState('')
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -67,6 +83,7 @@ export default function ChatPage() {
 
     setInput('')
     setError('')
+    setThinkingPhrase(randomPhrase())
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
 
@@ -118,7 +135,10 @@ export default function ChatPage() {
     <div className="min-h-screen bg-zinc-950 flex flex-col">
       {/* Header */}
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-white font-bold">BEZ PIERDOLENIA</h1>
+        <div>
+          <h1 className="text-white font-bold leading-tight">BEZ PIERDOLENIA</h1>
+          <p className="text-zinc-500 text-xs">z Pitbulem</p>
+        </div>
         <button
           onClick={handleLogout}
           className="text-zinc-400 hover:text-white text-sm transition-colors"
@@ -171,8 +191,8 @@ export default function ChatPage() {
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-zinc-800 text-zinc-400 rounded-lg px-4 py-3 text-sm">
-              Agent pisze...
+            <div className="bg-zinc-800 text-zinc-400 rounded-lg px-4 py-3 text-sm italic">
+              {thinkingPhrase}
             </div>
           </div>
         )}
