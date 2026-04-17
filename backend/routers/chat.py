@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from middleware import get_current_user
-from agents.graph import run_agent
+from agents.graph import stream_agent
 from agents.extraction import run_extraction_agent
 from agents.summarizer import run_summarizer_agent
 from services.memory import get_user_profile, get_message_count
 from config import supabase
 import asyncio
+import json
 
 router = APIRouter()
 
@@ -18,13 +20,10 @@ class ChatRequest(BaseModel):
 
 async def background_tasks(user_id: str, user_message: str, agent_response: str, user_profile: dict):
     """Uruchamia Extraction i ewentualnie Summarizer w tle."""
-    # Extraction Agent — po każdej wiadomości
     await run_in_threadpool(
         run_extraction_agent,
         user_id, user_message, agent_response, user_profile
     )
-
-    # Summarizer — co 10 wiadomości
     count = await run_in_threadpool(get_message_count, user_id)
     if count > 0 and count % 10 == 0:
         await run_in_threadpool(run_summarizer_agent, user_id)
@@ -41,7 +40,6 @@ def check_rate_limit(user_id: str):
     day_ago = (now - timedelta(days=1)).isoformat()
     minute_ago = (now - timedelta(minutes=1)).isoformat()
 
-    # Dzienny limit
     daily = supabase.table("messages")\
         .select("id", count="exact")\
         .eq("user_id", user_id)\
@@ -55,7 +53,6 @@ def check_rate_limit(user_id: str):
             detail="Dzienny limit wiadomości wyczerpany. Wróć jutro."
         )
 
-    # Per-minutowy limit
     per_minute = supabase.table("messages")\
         .select("id", count="exact")\
         .eq("user_id", user_id)\
@@ -80,16 +77,27 @@ async def chat(
     if len(body.message) > 2000:
         raise HTTPException(status_code=400, detail="Wiadomość za długa (max 2000 znaków)")
 
-    # Rate limit
     check_rate_limit(user_id)
-
-    # Pobierz profil przed uruchomieniem agenta (potrzebny do Extraction)
     user_profile = await run_in_threadpool(get_user_profile, user_id)
 
-    # Uruchom agenta
-    response = await run_in_threadpool(run_agent, user_id=user_id, message=body.message)
+    async def generate():
+        full_response = ""
+        try:
+            async for token in stream_agent(user_id, body.message):
+                full_response += token
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
 
-    # Background tasks — nie blokują odpowiedzi
-    asyncio.create_task(background_tasks(user_id, body.message, response, user_profile))
+        yield f"data: {json.dumps({'done': True})}\n\n"
+        asyncio.create_task(background_tasks(user_id, body.message, full_response, user_profile))
 
-    return {"response": response}
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -88,7 +88,7 @@ export default function ChatPage() {
     setLoading(true)
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     try {
       const res = await fetch(`${API_URL}/chat/`, {
@@ -100,13 +100,57 @@ export default function ChatPage() {
         body: JSON.stringify({ message: text }),
         signal: controller.signal,
       })
-      const data = await res.json()
+
       if (res.status === 429) {
         throw new Error('Dzienny limit wiadomości wyczerpany')
       }
-      if (!res.ok) throw new Error(data.detail || 'Błąd odpowiedzi agenta')
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.detail || 'Błąd odpowiedzi agenta')
+      }
+
+      // Dodaj pusty placeholder dla odpowiedzi agenta
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+      setLoading(false)
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.error) throw new Error(data.error)
+            if (data.token) {
+              setMessages(prev => {
+                const msgs = [...prev]
+                msgs[msgs.length - 1] = {
+                  ...msgs[msgs.length - 1],
+                  content: msgs[msgs.length - 1].content + data.token,
+                }
+                return msgs
+              })
+            }
+          } catch {
+            // niepełna linia — czekaj na więcej danych
+          }
+        }
+      }
     } catch (e: unknown) {
+      setMessages(prev => {
+        const last = prev[prev.length - 1]
+        if (last?.role === 'assistant' && last.content === '') return prev.slice(0, -1)
+        return prev
+      })
       if (e instanceof Error && e.name === 'AbortError') {
         setError('Brak odpowiedzi od serwera — spróbuj ponownie')
       } else {

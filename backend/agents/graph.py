@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, AsyncGenerator
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langchain_anthropic import ChatAnthropic
@@ -316,7 +316,11 @@ def fetch_context(state: AgentState) -> AgentState:
 
     system_prompt = build_system_prompt(profile, summary, session_type, pending_conflicts)
 
-    messages = [SystemMessage(content=system_prompt)]
+    messages = [SystemMessage(content=[{
+        "type": "text",
+        "text": system_prompt,
+        "cache_control": {"type": "ephemeral"},
+    }])]
     for msg in history:
         if msg["role"] == "user":
             messages.append(HumanMessage(content=msg["content"]))
@@ -394,6 +398,31 @@ graph.add_edge("tools", "orchestrator")
 graph.add_edge("post_process", END)
 
 agent_graph = graph.compile()
+
+
+async def stream_agent(user_id: str, message: str) -> AsyncGenerator[str, None]:
+    """Streamuje tokeny odpowiedzi agenta token po tokenie."""
+    async for chunk, metadata in agent_graph.astream(
+        {
+            "user_id": user_id,
+            "session_id": "",
+            "user_message": message,
+            "user_profile": {},
+            "memory_summary": "",
+            "conversation_history": [],
+            "messages": [],
+            "agent_response": "",
+        },
+        stream_mode="messages",
+    ):
+        if (
+            metadata.get("langgraph_node") == "orchestrator"
+            and hasattr(chunk, "content")
+            and isinstance(chunk.content, str)
+            and chunk.content
+            and not getattr(chunk, "tool_call_chunks", None)
+        ):
+            yield chunk.content
 
 
 def run_agent(user_id: str, message: str) -> str:
