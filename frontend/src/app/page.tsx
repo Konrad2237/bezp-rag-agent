@@ -193,13 +193,14 @@ export default function LoginPage() {
                 onChange={e => setPasswordConfirm(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
               />
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={gdprConsent}
-                  onChange={e => setGdprConsent(e.target.checked)}
-                  className="mt-0.5 accent-white w-4 h-4 shrink-0"
-                />
+              <label className="flex items-start gap-3 cursor-pointer" onClick={() => setGdprConsent(v => !v)}>
+                <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${gdprConsent ? 'bg-white border-white' : 'border-zinc-600'}`}>
+                  {gdprConsent && (
+                    <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+                    </svg>
+                  )}
+                </div>
                 <span className="text-zinc-400 text-xs leading-snug">
                   Akceptuję{' '}
                   <Link href="/privacy" target="_blank" className="underline text-zinc-300 hover:text-white">

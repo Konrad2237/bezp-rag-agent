@@ -245,17 +245,21 @@ export default function QuizPage() {
             <div>
               <label className={labelClass}>Dostępny sprzęt (możesz wybrać kilka)</label>
               <div className="space-y-2 mt-2">
-                {SPRZET_OPTIONS.map(opt => (
-                  <label key={opt.value} className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={form.dostepny_sprzet.includes(opt.value)}
-                      onChange={() => toggleSprzet(opt.value)}
-                      className="w-4 h-4 accent-white"
-                    />
-                    <span className="text-zinc-300 text-sm">{opt.label}</span>
-                  </label>
-                ))}
+                {SPRZET_OPTIONS.map(opt => {
+                  const checked = form.dostepny_sprzet.includes(opt.value)
+                  return (
+                    <label key={opt.value} className="flex items-center gap-3 cursor-pointer py-1" onClick={() => toggleSprzet(opt.value)}>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? 'bg-white border-white' : 'border-zinc-600'}`}>
+                        {checked && (
+                          <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-zinc-300 text-sm">{opt.label}</span>
+                    </label>
+                  )
+                })}
               </div>
             </div>
             <div>

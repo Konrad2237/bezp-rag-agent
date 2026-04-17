@@ -65,7 +65,7 @@ async def submit_quiz(
             "ograniczenia": body.ograniczenia,
             "notatki_quiz": body.notatki_quiz,
             "quiz_completed": True,
-        }).execute()
+        }, on_conflict="user_id").execute()
 
         return {"message": "Quiz zapisany. Możesz zacząć rozmowę z agentem."}
     except Exception as e:
