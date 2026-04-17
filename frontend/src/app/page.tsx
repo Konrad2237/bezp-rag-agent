@@ -61,6 +61,7 @@ export default function LoginPage() {
       }
 
       localStorage.setItem('bezp_token', data.access_token)
+      if (data.refresh_token) localStorage.setItem('bezp_refresh_token', data.refresh_token)
 
       const meRes = await fetch(`${API_URL}/auth/me`, {
         headers: { Authorization: `Bearer ${data.access_token}` },

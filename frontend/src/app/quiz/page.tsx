@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { getValidToken } from '@/lib/auth'
 
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -43,8 +44,9 @@ export default function QuizPage() {
   })
 
   useEffect(() => {
-    const token = localStorage.getItem('bezp_token')
-    if (!token) router.push('/')
+    getValidToken().then(token => {
+      if (!token) router.push('/')
+    })
   }, [router])
 
   function update(field: string, value: string) {
@@ -95,7 +97,7 @@ export default function QuizPage() {
   async function handleSubmit() {
     setError('')
     setLoading(true)
-    const token = localStorage.getItem('bezp_token')
+    const token = await getValidToken()
 
     try {
       const res = await fetch(`${API_URL}/quiz/submit`, {

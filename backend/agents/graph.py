@@ -427,19 +427,3 @@ async def stream_agent(user_id: str, message: str) -> AsyncGenerator[str, None]:
                     yield block["text"]
 
 
-def run_agent(user_id: str, message: str) -> str:
-    """Uruchamia agenta i zwraca odpowiedź."""
-    print(f"\n{'='*50}")
-    print(f"[AGENT] Wiadomość: '{message[:50]}'")
-    result = agent_graph.invoke({
-        "user_id": user_id,
-        "session_id": "",
-        "user_message": message,
-        "user_profile": {},
-        "memory_summary": "",
-        "conversation_history": [],
-        "messages": [],
-        "agent_response": "",
-    })
-    print(f"{'='*50}\n")
-    return result["agent_response"]

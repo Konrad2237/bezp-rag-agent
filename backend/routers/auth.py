@@ -59,8 +59,30 @@ async def login(body: LoginRequest):
             raise HTTPException(status_code=401, detail="Błędne dane logowania")
         return {
             "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token,
             "user_id": response.user.id
         }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh")
+async def refresh(body: RefreshRequest):
+    """Odnawia wygasły JWT token używając refresh_token."""
+    try:
+        response = supabase.auth.refresh_session(body.refresh_token)
+        if response.session is None:
+            raise HTTPException(status_code=401, detail="Sesja wygasła — zaloguj się ponownie")
+        return {
+            "access_token": response.session.access_token,
+            "refresh_token": response.session.refresh_token,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail=str(e))
 

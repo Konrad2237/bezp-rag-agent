@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { getValidToken } from '@/lib/auth'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -79,7 +80,7 @@ export default function ChatPage() {
     const text = input.trim()
     if (!text || loading) return
 
-    const token = localStorage.getItem('bezp_token')
+    const token = await getValidToken()
     if (!token) {
       router.replace('/')
       return
@@ -196,6 +197,7 @@ export default function ChatPage() {
 
   function handleLogout() {
     localStorage.removeItem('bezp_token')
+    localStorage.removeItem('bezp_refresh_token')
     router.push('/')
   }
 
