@@ -97,14 +97,14 @@ export default function PlanPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="h-[100dvh] bg-zinc-950 flex items-center justify-center">
         <p className="text-zinc-500">Ładuję plan...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col">
+    <div className="h-[100dvh] bg-zinc-950 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
         <div>
