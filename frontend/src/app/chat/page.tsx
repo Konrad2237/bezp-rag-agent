@@ -127,27 +127,10 @@ export default function ChatPage() {
         throw new Error(data.detail || 'Błąd odpowiedzi agenta')
       }
 
-      // Dodaj pusty placeholder i uruchom typing interval
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-      setLoading(false)
-      charQueueRef.current = []
-
-      typingIntervalRef.current = setInterval(() => {
-        if (charQueueRef.current.length === 0) return
-        const char = charQueueRef.current.shift()!
-        setMessages(prev => {
-          const msgs = [...prev]
-          msgs[msgs.length - 1] = {
-            ...msgs[msgs.length - 1],
-            content: msgs[msgs.length - 1].content + char,
-          }
-          return msgs
-        })
-      }, CHAR_INTERVAL_MS)
-
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let started = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -163,6 +146,25 @@ export default function ChatPage() {
             const data = JSON.parse(line.slice(6))
             if (data.error) throw new Error(data.error)
             if (data.token) {
+              // Pierwszy token — dopiero teraz pokazuj bąbelek i zacznij pisać
+              if (!started) {
+                started = true
+                setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+                setLoading(false)
+                charQueueRef.current = []
+                typingIntervalRef.current = setInterval(() => {
+                  if (charQueueRef.current.length === 0) return
+                  const char = charQueueRef.current.shift()!
+                  setMessages(prev => {
+                    const msgs = [...prev]
+                    msgs[msgs.length - 1] = {
+                      ...msgs[msgs.length - 1],
+                      content: msgs[msgs.length - 1].content + char,
+                    }
+                    return msgs
+                  })
+                }, CHAR_INTERVAL_MS)
+              }
               for (const char of data.token) {
                 charQueueRef.current.push(char)
               }
@@ -228,10 +230,10 @@ export default function ChatPage() {
       {/* Header */}
       <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
         <div>
-          <h1 className="text-white font-bold leading-tight">BEZ PIERDOLENIA</h1>
+          <h1 className="text-white font-bold leading-tight text-sm sm:text-base">BEZ PIERDOLENIA</h1>
           <p className="text-zinc-500 text-xs">z Pitbulem</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <nav className="flex gap-1 bg-zinc-900 rounded p-1">
             <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
               Chat
@@ -245,7 +247,7 @@ export default function ChatPage() {
           </nav>
           <button
             onClick={handleLogout}
-            className="text-zinc-400 hover:text-white text-sm transition-colors"
+            className="text-zinc-400 hover:text-white text-xs sm:text-sm transition-colors"
           >
             Wyloguj
           </button>

@@ -178,33 +178,24 @@ export default function PlanPage() {
                       <p className="text-zinc-500 text-xs mt-0.5">{day.scheduled_days.join(', ')}</p>
                     )}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-zinc-800">
-                          <th className="text-left px-4 py-2 text-zinc-500 font-normal">Ćwiczenie</th>
-                          <th className="text-center px-3 py-2 text-zinc-500 font-normal whitespace-nowrap">Serie</th>
-                          <th className="text-center px-3 py-2 text-zinc-500 font-normal whitespace-nowrap">Powt.</th>
-                          <th className="text-center px-3 py-2 text-zinc-500 font-normal whitespace-nowrap">Przerwa</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {day.exercises.map((ex, ei) => (
-                          <tr key={ei} className="border-b border-zinc-800 last:border-0">
-                            <td className="px-4 py-3">
-                              <div className="text-white">{ex.name}</div>
-                              <div className="text-zinc-500 text-xs">{ex.muscle_group}</div>
-                              {ex.notes && (
-                                <div className="text-zinc-600 text-xs mt-0.5 italic">{ex.notes}</div>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 text-center text-zinc-300">{ex.sets}</td>
-                            <td className="px-3 py-3 text-center text-zinc-300">{ex.reps}</td>
-                            <td className="px-3 py-3 text-center text-zinc-500 text-xs whitespace-nowrap">{ex.rest_seconds}s</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="divide-y divide-zinc-800">
+                    {day.exercises.map((ex, ei) => (
+                      <div key={ei} className="px-4 py-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-white text-sm font-medium">{ex.name}</div>
+                          <div className="text-zinc-500 text-xs mt-0.5">{ex.muscle_group}</div>
+                          {ex.notes && (
+                            <div className="text-zinc-600 text-xs mt-0.5 italic">{ex.notes}</div>
+                          )}
+                        </div>
+                        <div className="shrink-0 flex gap-3 text-xs text-right">
+                          <div className="text-center">
+                            <div className="text-zinc-300 font-medium">{ex.sets}×{ex.reps}</div>
+                            <div className="text-zinc-600">{ex.rest_seconds}s</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
