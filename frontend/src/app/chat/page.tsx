@@ -48,6 +48,7 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const charQueueRef = useRef<string[]>([])
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const typingTargetIndexRef = useRef<number>(-1)
 
   useEffect(() => {
     async function checkAuth() {
@@ -149,17 +150,23 @@ export default function ChatPage() {
               // Pierwszy token — dopiero teraz pokazuj bąbelek i zacznij pisać
               if (!started) {
                 started = true
-                setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+                setMessages(prev => {
+                  const next = [...prev, { role: 'assistant' as const, content: '' }]
+                  typingTargetIndexRef.current = next.length - 1
+                  return next
+                })
                 setLoading(false)
                 charQueueRef.current = []
                 typingIntervalRef.current = setInterval(() => {
                   if (charQueueRef.current.length === 0) return
                   const char = charQueueRef.current.shift()!
+                  const targetIdx = typingTargetIndexRef.current
                   setMessages(prev => {
+                    if (targetIdx < 0 || targetIdx >= prev.length) return prev
                     const msgs = [...prev]
-                    msgs[msgs.length - 1] = {
-                      ...msgs[msgs.length - 1],
-                      content: msgs[msgs.length - 1].content + char,
+                    msgs[targetIdx] = {
+                      ...msgs[targetIdx],
+                      content: msgs[targetIdx].content + char,
                     }
                     return msgs
                   })
@@ -238,12 +245,18 @@ export default function ChatPage() {
             <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
               Chat
             </span>
-            <Link
-              href="/plan"
-              className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
-            >
-              Plan
-            </Link>
+            {loading ? (
+              <span className="px-3 py-1.5 text-sm rounded text-zinc-700 cursor-not-allowed">
+                Plan
+              </span>
+            ) : (
+              <Link
+                href="/plan"
+                className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+              >
+                Plan
+              </Link>
+            )}
           </nav>
           <button
             onClick={handleLogout}
