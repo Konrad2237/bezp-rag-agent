@@ -340,10 +340,10 @@ def fetch_context(state: AgentState) -> AgentState:
     }
 
 
-def orchestrator(state: AgentState) -> AgentState:
+async def orchestrator(state: AgentState) -> AgentState:
     """Node 2: Główny agent — Claude Sonnet z narzędziami."""
     print(f"[GRAPH] orchestrator — Claude myśli...")
-    response = model.invoke(state["messages"])
+    response = await model.ainvoke(state["messages"])
     return {**state, "messages": [response]}
 
 
@@ -415,14 +415,16 @@ async def stream_agent(user_id: str, message: str) -> AsyncGenerator[str, None]:
         },
         stream_mode="messages",
     ):
-        if (
-            metadata.get("langgraph_node") == "orchestrator"
-            and hasattr(chunk, "content")
-            and isinstance(chunk.content, str)
-            and chunk.content
-            and not getattr(chunk, "tool_call_chunks", None)
-        ):
-            yield chunk.content
+        node = metadata.get("langgraph_node")
+        content = getattr(chunk, "content", None)
+        if node != "orchestrator" or getattr(chunk, "tool_call_chunks", None):
+            continue
+        if isinstance(content, str) and content:
+            yield content
+        elif isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text" and block.get("text"):
+                    yield block["text"]
 
 
 def run_agent(user_id: str, message: str) -> str:

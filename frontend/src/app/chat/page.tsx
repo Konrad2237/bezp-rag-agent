@@ -22,6 +22,8 @@ function randomPhrase() {
   return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]
 }
 
+const CHAR_INTERVAL_MS = 18 // prędkość pisania — ms na znak
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -36,6 +38,8 @@ export default function ChatPage() {
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const charQueueRef = useRef<string[]>([])
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     async function checkAuth() {
@@ -109,9 +113,23 @@ export default function ChatPage() {
         throw new Error(data.detail || 'Błąd odpowiedzi agenta')
       }
 
-      // Dodaj pusty placeholder dla odpowiedzi agenta
+      // Dodaj pusty placeholder i uruchom typing interval
       setMessages(prev => [...prev, { role: 'assistant', content: '' }])
       setLoading(false)
+      charQueueRef.current = []
+
+      typingIntervalRef.current = setInterval(() => {
+        if (charQueueRef.current.length === 0) return
+        const char = charQueueRef.current.shift()!
+        setMessages(prev => {
+          const msgs = [...prev]
+          msgs[msgs.length - 1] = {
+            ...msgs[msgs.length - 1],
+            content: msgs[msgs.length - 1].content + char,
+          }
+          return msgs
+        })
+      }, CHAR_INTERVAL_MS)
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
@@ -131,21 +149,31 @@ export default function ChatPage() {
             const data = JSON.parse(line.slice(6))
             if (data.error) throw new Error(data.error)
             if (data.token) {
-              setMessages(prev => {
-                const msgs = [...prev]
-                msgs[msgs.length - 1] = {
-                  ...msgs[msgs.length - 1],
-                  content: msgs[msgs.length - 1].content + data.token,
-                }
-                return msgs
-              })
+              for (const char of data.token) {
+                charQueueRef.current.push(char)
+              }
             }
           } catch {
             // niepełna linia — czekaj na więcej danych
           }
         }
       }
+
+      // Poczekaj aż kolejka się opróżni zanim wyczyścimy interval
+      await new Promise<void>(resolve => {
+        const wait = setInterval(() => {
+          if (charQueueRef.current.length === 0) {
+            clearInterval(wait)
+            resolve()
+          }
+        }, 50)
+      })
     } catch (e: unknown) {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
+      charQueueRef.current = []
       setMessages(prev => {
         const last = prev[prev.length - 1]
         if (last?.role === 'assistant' && last.content === '') return prev.slice(0, -1)
@@ -157,6 +185,10 @@ export default function ChatPage() {
         setError(e instanceof Error ? e.message : 'Błąd połączenia')
       }
     } finally {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
       clearTimeout(timeoutId)
       setLoading(false)
     }
