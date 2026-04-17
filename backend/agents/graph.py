@@ -65,6 +65,47 @@ def _make_plan_tool(user_id: str):
     return generate_training_plan
 
 
+def _make_edit_tool(user_id: str):
+    """Tworzy narzędzie edit_plan_exercise z wstrzykniętym user_id."""
+    @tool
+    def edit_plan_exercise(day_label: str, old_exercise_name: str, new_name: str = "", new_sets: int = 0, new_reps: str = "", new_notes: str = "") -> str:
+        """
+        Modyfikuje konkretne ćwiczenie w istniejącym planie treningowym użytkownika.
+        Używaj gdy user chce zamienić lub zmodyfikować jedno ćwiczenie bez generowania nowego planu.
+        Argumenty:
+        - day_label: etykieta dnia, np. "Trening A"
+        - old_exercise_name: dokładna nazwa ćwiczenia do zmiany, np. "Przysiad ze sztangą"
+        - new_name: nowa nazwa ćwiczenia (puste = zostaw starą)
+        - new_sets: nowa liczba serii (0 = zostaw starą)
+        - new_reps: nowe powtórzenia, np. "8-10" (puste = zostaw stare)
+        - new_notes: nowe uwagi (puste = zostaw stare)
+        """
+        from config import supabase as _supabase
+        res = _supabase.table("training_plans").select("plan_data").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        if not res.data:
+            return "BŁĄD: Użytkownik nie ma planu treningowego."
+        plan = res.data[0]["plan_data"]
+        modified = False
+        for day in plan.get("days", []):
+            if day.get("day_label") != day_label:
+                continue
+            for ex in day.get("exercises", []):
+                if ex.get("name", "").lower() == old_exercise_name.lower():
+                    if new_name: ex["name"] = new_name
+                    if new_sets: ex["sets"] = new_sets
+                    if new_reps: ex["reps"] = new_reps
+                    if new_notes: ex["notes"] = new_notes
+                    modified = True
+                    break
+        if not modified:
+            return f"BŁĄD: Nie znaleziono ćwiczenia '{old_exercise_name}' w dniu '{day_label}'."
+        _supabase.table("training_plans").update({"plan_data": plan}).eq("user_id", user_id).execute()
+        print(f"[GRAPH] Plan zaktualizowany — zmieniono '{old_exercise_name}' w '{day_label}'")
+        return f"ZMIANA ZAPISANA. '{old_exercise_name}' w '{day_label}' zostało zaktualizowane. Plan w zakładce Plan jest już aktualny."
+
+    return edit_plan_exercise
+
+
 # ─── MODEL ───────────────────────────────────────────────
 _base_model = ChatAnthropic(
     model="claude-sonnet-4-20250514",
@@ -75,7 +116,8 @@ _base_model = ChatAnthropic(
 def _get_model(user_id: str):
     """Zwraca model z narzędziami (plan tool ma wstrzyknięty user_id)."""
     plan_tool = _make_plan_tool(user_id)
-    return _base_model.bind_tools([search_knowledge_tool, plan_tool])
+    edit_tool = _make_edit_tool(user_id)
+    return _base_model.bind_tools([search_knowledge_tool, plan_tool, edit_tool])
 
 
 # ─── SYSTEM PROMPT (PROMPT-01 v2.1) ──────────────────────
@@ -262,6 +304,14 @@ Masz dostępne narzędzia: search_knowledge_tool i generate_training_plan.
 → Jeśli PLAN WYGENEROWANY — poinformuj użytkownika krótko i powiedz
   że może go zobaczyć w zakładce Plan w aplikacji
 
+**edit_plan_exercise** — modyfikuje konkretne ćwiczenie w istniejącym planie:
+→ UŻYWAJ gdy user chce: zamienić ćwiczenie, zmienić serie/powtórzenia/przerwy, dodać uwagę
+→ To jest ZAWSZE lepszy wybór niż generate_training_plan dla drobnych zmian
+→ Podaj dokładną nazwę ćwiczenia z sekcji AKTUALNY PLAN powyżej
+→ Po zmianie powiedz że plan w zakładce Plan jest już zaktualizowany
+→ PRZYKŁAD: user pisze "zmień przysiad na wykroki" → wywołaj edit_plan_exercise,
+  NIE generate_training_plan
+
 ════════════════════════════════════════
 ZAKRES TWOICH KOMPETENCJI
 ════════════════════════════════════════
@@ -437,7 +487,14 @@ def post_process(state: AgentState) -> AgentState:
     """Node 3: Zapisuje wiadomości do bazy."""
     print(f"[GRAPH] post_process — zapisuję wiadomości")
     last_message = state["messages"][-1]
-    agent_response = last_message.content if hasattr(last_message, "content") else ""
+    raw_content = last_message.content if hasattr(last_message, "content") else ""
+    if isinstance(raw_content, list):
+        agent_response = " ".join(
+            block.get("text", "") for block in raw_content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    else:
+        agent_response = raw_content
 
     save_messages(
         user_id=state["user_id"],
@@ -453,7 +510,8 @@ def post_process(state: AgentState) -> AgentState:
 async def tool_dispatcher(state: AgentState) -> AgentState:
     """Node: wywołuje narzędzia z wstrzykniętym user_id dla plan tool."""
     plan_tool = _make_plan_tool(state["user_id"])
-    all_tools = {t.name: t for t in [search_knowledge_tool, plan_tool]}
+    edit_tool = _make_edit_tool(state["user_id"])
+    all_tools = {t.name: t for t in [search_knowledge_tool, plan_tool, edit_tool]}
 
     last_message = state["messages"][-1]
     tool_results = []
@@ -507,29 +565,19 @@ agent_graph = graph.compile()
 
 
 async def stream_agent(user_id: str, message: str) -> AsyncGenerator[str, None]:
-    """Streamuje tokeny odpowiedzi agenta token po tokenie."""
-    async for chunk, metadata in agent_graph.astream(
-        {
-            "user_id": user_id,
-            "session_id": "",
-            "user_message": message,
-            "user_profile": {},
-            "memory_summary": "",
-            "conversation_history": [],
-            "messages": [],
-            "agent_response": "",
-        },
-        stream_mode="messages",
-    ):
-        node = metadata.get("langgraph_node")
-        content = getattr(chunk, "content", None)
-        if node != "orchestrator" or getattr(chunk, "tool_call_chunks", None):
-            continue
-        if isinstance(content, str) and content:
-            yield content
-        elif isinstance(content, list):
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "text" and block.get("text"):
-                    yield block["text"]
+    """Uruchamia agenta do końca, zwraca gotową odpowiedź — animacja po stronie frontendu."""
+    result = await agent_graph.ainvoke({
+        "user_id": user_id,
+        "session_id": "",
+        "user_message": message,
+        "user_profile": {},
+        "memory_summary": "",
+        "conversation_history": [],
+        "messages": [],
+        "agent_response": "",
+    })
+    response = result.get("agent_response", "")
+    if response:
+        yield response
 
 
