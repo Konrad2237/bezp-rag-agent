@@ -47,7 +47,7 @@ def check_rate_limit(user_id: str):
         .gte("created_at", day_ago)\
         .execute()
 
-    if daily.count and daily.count >= 30:
+    if daily.count and daily.count >= 100:
         raise HTTPException(
             status_code=429,
             detail="Dzienny limit wiadomości wyczerpany. Wróć jutro."
