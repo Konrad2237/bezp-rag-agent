@@ -42,6 +42,7 @@ export default function ChatPage() {
   })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
   const [thinkingPhrase, setThinkingPhrase] = useState('')
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
@@ -49,6 +50,7 @@ export default function ChatPage() {
   const charQueueRef = useRef<string[]>([])
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const typingTargetIndexRef = useRef<number>(-1)
+  const messagesRef = useRef<Message[]>([])
 
   useEffect(() => {
     async function checkAuth() {
@@ -81,6 +83,7 @@ export default function ChatPage() {
   }, [router])
 
   useEffect(() => {
+    messagesRef.current = messages
     if (messages.length > 0) {
       sessionStorage.setItem('bezp_chat_messages', JSON.stringify(messages))
     }
@@ -89,6 +92,16 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Cleanup na unmount — tylko czyści interval, NIE abortuje fetcha
+  // Fetch kończy się w tle i zapisuje odpowiedź do sessionStorage
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+      }
+    }
+  }, [])
 
   async function sendMessage() {
     const text = input.trim()
@@ -107,7 +120,9 @@ export default function ChatPage() {
     setLoading(true)
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 60000)
+    // Timeout resetowany przy każdym odebranym chunk'u — nie strzelamy
+    // po stałym czasie, tylko gdy serwer milczy przez 150s z rzędu
+    let timeoutId = setTimeout(() => controller.abort(), 150000)
 
     try {
       const res = await fetch(`${API_URL}/chat/`, {
@@ -137,6 +152,10 @@ export default function ChatPage() {
         const { done, value } = await reader.read()
         if (done) break
 
+        // Reset timeoutu przy każdym odebranym danych (keepalive lub token)
+        clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => controller.abort(), 150000)
+
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
@@ -150,12 +169,25 @@ export default function ChatPage() {
               // Pierwszy token — dopiero teraz pokazuj bąbelek i zacznij pisać
               if (!started) {
                 started = true
+                const fullContent = data.token
+
+                // Od razu zapisz PEŁNĄ odpowiedź do sessionStorage przez ref.
+                // Jeśli user wyjdzie podczas typing animation, wróci i zobaczy
+                // kompletną wiadomość zamiast urwanej.
+                const withFull = [
+                  ...messagesRef.current,
+                  { role: 'assistant' as const, content: fullContent },
+                ]
+                sessionStorage.setItem('bezp_chat_messages', JSON.stringify(withFull))
+
+                // React state — pusty content żeby typing animation działała
                 setMessages(prev => {
                   const next = [...prev, { role: 'assistant' as const, content: '' }]
                   typingTargetIndexRef.current = next.length - 1
                   return next
                 })
                 setLoading(false)
+                setIsTyping(true)
                 charQueueRef.current = []
                 typingIntervalRef.current = setInterval(() => {
                   if (charQueueRef.current.length === 0) return
@@ -197,6 +229,7 @@ export default function ChatPage() {
         typingIntervalRef.current = null
       }
       charQueueRef.current = []
+      setIsTyping(false)
       setMessages(prev => {
         const last = prev[prev.length - 1]
         if (last?.role === 'assistant' && last.content === '') return prev.slice(0, -1)
@@ -214,6 +247,7 @@ export default function ChatPage() {
       }
       clearTimeout(timeoutId)
       setLoading(false)
+      setIsTyping(false)
     }
   }
 
@@ -245,7 +279,7 @@ export default function ChatPage() {
             <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
               Chat
             </span>
-            {loading ? (
+            {(loading || isTyping) ? (
               <span className="px-3 py-1.5 text-sm rounded text-zinc-700 cursor-not-allowed">
                 Plan
               </span>

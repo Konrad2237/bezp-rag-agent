@@ -144,16 +144,22 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
     # Zapisz do bazy — update jeśli istnieje, insert jeśli nie
     existing = supabase.table("training_plans").select("id").eq("user_id", user_id).execute()
     if existing.data:
-        supabase.table("training_plans").update({
+        save_res = supabase.table("training_plans").update({
             "plan_data": plan_data,
             "generation_reason": generation_reason,
         }).eq("user_id", user_id).execute()
+        if not save_res.data:
+            print(f"[SZYBCIOR] BŁĄD: update nie zwrócił danych")
+            return {"error": "Zapis planu nie powiódł się"}
     else:
-        supabase.table("training_plans").insert({
+        save_res = supabase.table("training_plans").insert({
             "user_id": user_id,
             "plan_data": plan_data,
             "generation_reason": generation_reason,
         }).execute()
+        if not save_res.data:
+            print(f"[SZYBCIOR] BŁĄD: insert nie zwrócił danych")
+            return {"error": "Zapis planu nie powiódł się"}
 
-    print(f"[SZYBCIOR] Plan zapisany do bazy")
+    print(f"[SZYBCIOR] Plan zapisany do bazy, id: {save_res.data[0].get('id', '?')}")
     return {"plan": plan_data}

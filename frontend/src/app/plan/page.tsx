@@ -35,6 +35,7 @@ export default function PlanPage() {
   const router = useRouter()
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -63,15 +64,17 @@ export default function PlanPage() {
     return () => clearInterval(interval)
   }, [loading, plan])
 
-  async function fetchPlan() {
+  async function fetchPlan(isRefresh = false) {
+    if (isRefresh) setRefreshing(true)
+    setError('')
     const token = await getValidToken()
     if (!token) {
       router.replace('/')
       return
     }
     try {
-      const res = await fetch(`${API_URL}/plan/`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await fetch(`${API_URL}/plan/?t=${Date.now()}`, {
+        headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache' },
       })
       if (res.status === 404) {
         setPlan(null)
@@ -85,6 +88,7 @@ export default function PlanPage() {
       setError('Błąd połączenia')
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -159,10 +163,11 @@ export default function PlanPage() {
                   )}
                 </div>
                 <button
-                  onClick={fetchPlan}
-                  className="shrink-0 border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 text-sm px-4 py-2 rounded transition-colors"
+                  onClick={() => fetchPlan(true)}
+                  disabled={refreshing}
+                  className="shrink-0 border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 text-sm px-4 py-2 rounded transition-colors disabled:opacity-50"
                 >
-                  Odśwież
+                  {refreshing ? 'Odświeżam...' : 'Odśwież'}
                 </button>
               </div>
               {error && <p className="text-red-400 text-sm mt-2">{error}</p>}

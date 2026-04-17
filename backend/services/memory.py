@@ -36,15 +36,17 @@ def get_or_create_session(user_id: str) -> str:
     return new_session.data[0]["id"]
 
 
-def get_conversation_history(session_id: str, limit: int = 10) -> list[dict]:
+def get_conversation_history(user_id: str, limit: int = 20) -> list[dict]:
+    """Zwraca ostatnie N wiadomości użytkownika (niezależnie od sesji)."""
     result = supabase.table("messages")\
         .select("role, content")\
-        .eq("session_id", session_id)\
-        .order("created_at", desc=False)\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=True)\
         .limit(limit)\
         .execute()
 
-    return result.data or []
+    data = result.data or []
+    return list(reversed(data))
 
 
 def get_user_profile(user_id: str) -> dict:

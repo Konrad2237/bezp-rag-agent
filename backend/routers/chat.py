@@ -82,13 +82,32 @@ async def chat(
 
     async def generate():
         full_response = ""
-        try:
-            async for token in stream_agent(user_id, body.message):
-                full_response += token
-                yield f"data: {json.dumps({'token': token})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        agent_exception = None
+
+        async def run_agent():
+            nonlocal full_response, agent_exception
+            try:
+                async for token in stream_agent(user_id, body.message):
+                    full_response += token
+            except Exception as e:
+                agent_exception = e
+
+        agent_task = asyncio.create_task(run_agent())
+
+        # Co 20s wysyłaj keepalive żeby Railway/proxy nie zamknęło połączenia
+        # (szczególnie ważne przy generowaniu planu — 3 wywołania Claude)
+        while not agent_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(agent_task), timeout=20.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+
+        if agent_exception:
+            yield f"data: {json.dumps({'error': str(agent_exception)})}\n\n"
             return
+
+        if full_response:
+            yield f"data: {json.dumps({'token': full_response})}\n\n"
 
         yield f"data: {json.dumps({'done': True})}\n\n"
         asyncio.create_task(background_tasks(user_id, body.message, full_response, user_profile))

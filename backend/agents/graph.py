@@ -81,25 +81,50 @@ def _make_edit_tool(user_id: str):
         - new_notes: nowe uwagi (puste = zostaw stare)
         """
         from config import supabase as _supabase
-        res = _supabase.table("training_plans").select("plan_data").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+        res = _supabase.table("training_plans").select("id, plan_data").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
         if not res.data:
-            return "BŁĄD: Użytkownik nie ma planu treningowego."
-        plan = res.data[0]["plan_data"]
+            return "BŁĄD: Użytkownik nie ma planu treningowego. Powiedz mu żeby poprosił o wygenerowanie planu."
+        plan_row = res.data[0]
+        plan = plan_row["plan_data"]
+        plan_id = plan_row["id"]
+
+        # Debug: pokaż dostępne dni i ćwiczenia
+        available_days = [d.get("day_label", "") for d in plan.get("days", [])]
+        print(f"[EDIT] Szukam dnia '{day_label}' w: {available_days}")
+
         modified = False
         for day in plan.get("days", []):
-            if day.get("day_label") != day_label:
+            # Matching nazwy dnia — case-insensitive i partial match
+            if day.get("day_label", "").lower().strip() != day_label.lower().strip():
                 continue
+            available_exercises = [e.get("name", "") for e in day.get("exercises", [])]
+            print(f"[EDIT] Szukam ćwiczenia '{old_exercise_name}' w: {available_exercises}")
             for ex in day.get("exercises", []):
-                if ex.get("name", "").lower() == old_exercise_name.lower():
+                if ex.get("name", "").lower().strip() == old_exercise_name.lower().strip():
                     if new_name: ex["name"] = new_name
                     if new_sets: ex["sets"] = new_sets
                     if new_reps: ex["reps"] = new_reps
                     if new_notes: ex["notes"] = new_notes
                     modified = True
                     break
+            if modified:
+                break
+
         if not modified:
-            return f"BŁĄD: Nie znaleziono ćwiczenia '{old_exercise_name}' w dniu '{day_label}'."
-        _supabase.table("training_plans").update({"plan_data": plan}).eq("user_id", user_id).execute()
+            all_exercises = []
+            for day in plan.get("days", []):
+                for ex in day.get("exercises", []):
+                    all_exercises.append(f"{day.get('day_label')}: {ex.get('name')}")
+            return (
+                f"BŁĄD: Nie znaleziono ćwiczenia '{old_exercise_name}' w dniu '{day_label}'. "
+                f"Dostępne dni: {available_days}. "
+                f"Wszystkie ćwiczenia w planie: {all_exercises}. "
+                f"Użyj DOKŁADNEJ nazwy z tej listy i spróbuj ponownie."
+            )
+
+        update_res = _supabase.table("training_plans").update({"plan_data": plan}).eq("id", plan_id).execute()
+        if not update_res.data:
+            return f"BŁĄD: Zapis do bazy nie powiódł się. Spróbuj ponownie."
         print(f"[GRAPH] Plan zaktualizowany — zmieniono '{old_exercise_name}' w '{day_label}'")
         return f"ZMIANA ZAPISANA. '{old_exercise_name}' w '{day_label}' zostało zaktualizowane. Plan w zakładce Plan jest już aktualny."
 
@@ -410,7 +435,7 @@ def fetch_context(state: AgentState) -> AgentState:
     profile = get_user_profile(user_id)
     summary = get_memory_summary(user_id)
     session_id = get_or_create_session(user_id)
-    history = get_conversation_history(session_id)
+    history = get_conversation_history(user_id)
 
     # Pobierz nierozwiązane konflikty
     conflicts_result = supabase.table("pending_conflicts")\
