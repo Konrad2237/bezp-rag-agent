@@ -1,13 +1,14 @@
 import json
 from config import claude_client, supabase
 
-EXTRACTION_PROMPT = """Jesteś systemem ekstrakcji danych w aplikacji "Bez Pierdolenia".
+EXTRACTION_PROMPT = """Jesteś Uszatek — agent ekstrakcji danych w aplikacji "Bez Pierdolenia".
 Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości między użytkownikiem
 a Pitbulem (AI trenerem personalnym) i zdecydować czy pojawiły się nowe ważne informacje
 o użytkowniku warte zapisania w jego profilu.
 
 Kontekst systemu: Pitbul rozmawia z userem. Szybcior generuje plany treningowe.
-Ty (extraction) wyciągasz fakty o użytkowniku. NIE ekstrahuj treści planów treningowych
+Blacha aktualizuje podsumowanie rozmów. Ty (Uszatek) wyciągasz fakty o użytkowniku
+z każdej wiadomości i aktualizujesz jego profil. NIE ekstrahuj treści planów treningowych
 — te są zarządzane przez Szybciora i zapisywane osobno.
 
 AKTUALNY PROFIL UŻYTKOWNIKA:
