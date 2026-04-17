@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getValidToken } from '@/lib/auth'
@@ -32,7 +33,13 @@ interface Message {
 
 export default function ChatPage() {
   const router = useRouter()
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = sessionStorage.getItem('bezp_chat_messages')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [thinkingPhrase, setThinkingPhrase] = useState('')
@@ -71,6 +78,12 @@ export default function ChatPage() {
     }
     checkAuth()
   }, [router])
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      sessionStorage.setItem('bezp_chat_messages', JSON.stringify(messages))
+    }
+  }, [messages])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -198,6 +211,7 @@ export default function ChatPage() {
   function handleLogout() {
     localStorage.removeItem('bezp_token')
     localStorage.removeItem('bezp_refresh_token')
+    sessionStorage.removeItem('bezp_chat_messages')
     router.push('/')
   }
 
@@ -217,12 +231,25 @@ export default function ChatPage() {
           <h1 className="text-white font-bold leading-tight">BEZ PIERDOLENIA</h1>
           <p className="text-zinc-500 text-xs">z Pitbulem</p>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-zinc-400 hover:text-white text-sm transition-colors"
-        >
-          Wyloguj
-        </button>
+        <div className="flex items-center gap-4">
+          <nav className="flex gap-1 bg-zinc-900 rounded p-1">
+            <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
+              Chat
+            </span>
+            <Link
+              href="/plan"
+              className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+            >
+              Plan
+            </Link>
+          </nav>
+          <button
+            onClick={handleLogout}
+            className="text-zinc-400 hover:text-white text-sm transition-colors"
+          >
+            Wyloguj
+          </button>
+        </div>
       </header>
 
       {/* Messages */}
