@@ -1,14 +1,21 @@
 import json
 from config import claude_client, supabase
 
-EXTRACTION_PROMPT = """Jesteś systemem ekstrakcji danych. Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości i zdecydować czy pojawiły się nowe ważne informacje o użytkowniku.
+EXTRACTION_PROMPT = """Jesteś systemem ekstrakcji danych w aplikacji "Bez Pierdolenia".
+Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości między użytkownikiem
+a Pitbulem (AI trenerem personalnym) i zdecydować czy pojawiły się nowe ważne informacje
+o użytkowniku warte zapisania w jego profilu.
+
+Kontekst systemu: Pitbul rozmawia z userem. Szybcior generuje plany treningowe.
+Ty (extraction) wyciągasz fakty o użytkowniku. NIE ekstrahuj treści planów treningowych
+— te są zarządzane przez Szybciora i zapisywane osobno.
 
 AKTUALNY PROFIL UŻYTKOWNIKA:
 {user_profile}
 
 OSTATNIA WYMIANA WIADOMOŚCI:
 User: {user_message}
-Agent: {agent_response}
+Pitbul: {agent_response}
 
 ════════════════════════════════════════
 CO JEST WARTE ZAPISANIA
