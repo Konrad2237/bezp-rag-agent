@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -16,12 +17,14 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [gdprConsent, setGdprConsent] = useState(false)
 
   function reset() {
     setError('')
     setMessage('')
     setPassword('')
     setPasswordConfirm('')
+    setGdprConsent(false)
   }
 
   function switchMode(next: 'login' | 'register') {
@@ -86,6 +89,10 @@ export default function LoginPage() {
     }
     if (password.length < 6) {
       setError('Hasło musi mieć minimum 6 znaków')
+      return
+    }
+    if (!gdprConsent) {
+      setError('Musisz zaakceptować politykę prywatności')
       return
     }
 
@@ -177,13 +184,31 @@ export default function LoginPage() {
           />
 
           {mode === 'register' && (
-            <input
-              type="password"
-              placeholder="Powtórz hasło"
-              value={passwordConfirm}
-              onChange={e => setPasswordConfirm(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
-            />
+            <>
+              <input
+                type="password"
+                placeholder="Powtórz hasło"
+                value={passwordConfirm}
+                onChange={e => setPasswordConfirm(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
+              />
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={gdprConsent}
+                  onChange={e => setGdprConsent(e.target.checked)}
+                  className="mt-0.5 accent-white w-4 h-4 shrink-0"
+                />
+                <span className="text-zinc-400 text-xs leading-snug">
+                  Akceptuję{' '}
+                  <Link href="/privacy" target="_blank" className="underline text-zinc-300 hover:text-white">
+                    politykę prywatności
+                  </Link>{' '}
+                  i wyrażam zgodę na przetwarzanie danych osobowych, w tym danych zdrowotnych
+                  (waga, kontuzje), w celu korzystania z usługi AI trenera personalnego.
+                </span>
+              </label>
+            </>
           )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}

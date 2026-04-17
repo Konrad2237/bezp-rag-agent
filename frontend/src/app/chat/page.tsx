@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -68,6 +70,9 @@ export default function ChatPage() {
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setLoading(true)
 
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
     try {
       const res = await fetch(`${API_URL}/chat/`, {
         method: 'POST',
@@ -76,13 +81,22 @@ export default function ChatPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       })
       const data = await res.json()
+      if (res.status === 429) {
+        throw new Error('Dzienny limit wiadomości wyczerpany')
+      }
       if (!res.ok) throw new Error(data.detail || 'Błąd odpowiedzi agenta')
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }])
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Błąd połączenia')
+      if (e instanceof Error && e.name === 'AbortError') {
+        setError('Brak odpowiedzi od serwera — spróbuj ponownie')
+      } else {
+        setError(e instanceof Error ? e.message : 'Błąd połączenia')
+      }
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
@@ -126,13 +140,32 @@ export default function ChatPage() {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-3 text-sm whitespace-pre-wrap ${
+              className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
                 msg.role === 'user'
-                  ? 'bg-white text-black'
-                  : 'bg-zinc-800 text-zinc-100'
+                  ? 'bg-white text-black whitespace-pre-wrap'
+                  : 'bg-zinc-800 text-zinc-100 prose prose-invert prose-sm max-w-none'
               }`}
             >
-              {msg.content}
+              {msg.role === 'user' ? (
+                msg.content
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                    li: ({ children }) => <li>{children}</li>,
+                    strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                    h1: ({ children }) => <h1 className="text-base font-bold mb-1">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-bold mb-1">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
+                    code: ({ children }) => <code className="bg-zinc-700 px-1 rounded text-xs">{children}</code>,
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              )}
             </div>
           </div>
         ))}
