@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from middleware import get_current_user
-from config import supabase
+from config import supabase, supabase_admin
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ async def submit_quiz(
         raise HTTPException(status_code=400, detail="Wybierz co najmniej jeden sprzęt")
 
     try:
-        supabase.table("user_profiles").upsert({
+        supabase_admin.table("user_profiles").upsert({
             "user_id": user_id,
             "wiek": body.wiek,
             "plec": body.plec,

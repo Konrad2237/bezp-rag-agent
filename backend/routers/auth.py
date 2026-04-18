@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from config import supabase
+from config import supabase, supabase_admin
 from middleware import get_current_user
 
 router = APIRouter()
@@ -33,7 +33,7 @@ async def register(body: RegisterRequest):
         if not response.user.identities:
             raise HTTPException(status_code=400, detail="Konto z tym adresem email już istnieje.")
 
-        supabase.table("user_profiles").insert({
+        supabase_admin.table("user_profiles").insert({
             "user_id": response.user.id,
             "imie": body.imie,
             "nazwisko": body.nazwisko,
@@ -44,6 +44,7 @@ async def register(body: RegisterRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"[REGISTER ERROR] {type(e).__name__}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 

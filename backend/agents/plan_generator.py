@@ -3,7 +3,7 @@ import os
 import anthropic
 from services.rag import search_knowledge
 from services.memory import get_user_profile, get_memory_summary
-from config import supabase
+from config import supabase, supabase_admin
 
 PROMPT_04 = """Jesteś Szybcior — system generowania planów treningowych. Twoim zadaniem jest
 stworzenie spersonalizowanego planu na podstawie profilu użytkownika i dostępnej wiedzy.
@@ -128,7 +128,7 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=2048,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -142,9 +142,9 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
     plan_data = json.loads(raw)
 
     # Zapisz do bazy — update jeśli istnieje, insert jeśli nie
-    existing = supabase.table("training_plans").select("id").eq("user_id", user_id).execute()
+    existing = supabase_admin.table("training_plans").select("id").eq("user_id", user_id).execute()
     if existing.data:
-        save_res = supabase.table("training_plans").update({
+        save_res = supabase_admin.table("training_plans").update({
             "plan_data": plan_data,
             "generation_reason": generation_reason,
         }).eq("user_id", user_id).execute()
@@ -152,7 +152,7 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
             print(f"[SZYBCIOR] BŁĄD: update nie zwrócił danych")
             return {"error": "Zapis planu nie powiódł się"}
     else:
-        save_res = supabase.table("training_plans").insert({
+        save_res = supabase_admin.table("training_plans").insert({
             "user_id": user_id,
             "plan_data": plan_data,
             "generation_reason": generation_reason,

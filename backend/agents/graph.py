@@ -80,7 +80,7 @@ def _make_edit_tool(user_id: str):
         - new_reps: nowe powtórzenia, np. "8-10" (puste = zostaw stare)
         - new_notes: nowe uwagi (puste = zostaw stare)
         """
-        from config import supabase as _supabase
+        from config import supabase_admin as _supabase
         res = _supabase.table("training_plans").select("id, plan_data").eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
         if not res.data:
             return "BŁĄD: Użytkownik nie ma planu treningowego. Powiedz mu żeby poprosił o wygenerowanie planu."

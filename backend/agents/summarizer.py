@@ -1,5 +1,5 @@
 import json
-from config import claude_client, supabase
+from config import claude_client, supabase, supabase_admin
 
 SUMMARIZER_PROMPT = """Jesteś Blacha — system zarządzania pamięcią w aplikacji "Bez Pierdolenia".
 Twoim zadaniem jest zaktualizowanie podsumowania rozmów użytkownika z Pitbulem
@@ -124,7 +124,7 @@ def run_summarizer_agent(user_id: str):
                 .eq("id", summary_id)\
                 .execute()
         else:
-            supabase.table("conversation_summaries").insert({
+            supabase_admin.table("conversation_summaries").insert({
                 "user_id": user_id,
                 "summary_text": new_summary,
                 "messages_summarized": 10,

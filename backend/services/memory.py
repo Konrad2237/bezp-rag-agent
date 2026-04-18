@@ -1,4 +1,4 @@
-from config import supabase
+from config import supabase, supabase_admin
 from datetime import datetime, timezone
 
 
@@ -27,7 +27,7 @@ def get_or_create_session(user_id: str) -> str:
                 .eq("id", session["id"])\
                 .execute()
 
-    new_session = supabase.table("conversation_sessions").insert({
+    new_session = supabase_admin.table("conversation_sessions").insert({
         "user_id": user_id,
         "is_active": True,
         "message_count": 0,
@@ -84,7 +84,7 @@ def get_message_count(user_id: str) -> int:
 
 def save_messages(user_id: str, session_id: str, user_message: str, agent_response: str, prompt_version: str = "v1.0"):
     """Zapisuje wiadomości do bazy i aktualizuje sesję."""
-    supabase.table("messages").insert([
+    supabase_admin.table("messages").insert([
         {
             "user_id": user_id,
             "session_id": session_id,

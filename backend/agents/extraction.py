@@ -1,5 +1,5 @@
 import json
-from config import claude_client, supabase
+from config import claude_client, supabase, supabase_admin
 
 EXTRACTION_PROMPT = """Jesteś Uszatek — agent ekstrakcji danych w aplikacji "Bez Pierdolenia".
 Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości między użytkownikiem
@@ -140,7 +140,7 @@ def run_extraction_agent(user_id: str, user_message: str, agent_response: str, u
         conflict_desc = data.get("conflict_description")
 
         if conflict:
-            supabase.table("pending_conflicts").insert({
+            supabase_admin.table("pending_conflicts").insert({
                 "user_id": user_id,
                 "field": list(updates.keys())[0] if updates else "unknown",
                 "old_value": str(user_profile.get(list(updates.keys())[0], "")) if updates else "",
@@ -154,7 +154,7 @@ def run_extraction_agent(user_id: str, user_message: str, agent_response: str, u
         if updates:
             for field, new_value in updates.items():
                 old_value = user_profile.get(field, "")
-                supabase.table("profile_changes").insert({
+                supabase_admin.table("profile_changes").insert({
                     "user_id": user_id,
                     "field": field,
                     "old_value": str(old_value) if old_value else "",
