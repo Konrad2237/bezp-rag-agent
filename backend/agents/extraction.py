@@ -1,15 +1,17 @@
 import json
-from config import claude_client, supabase, supabase_admin
+import os
+import operator
+from typing import TypedDict, Annotated
+from langgraph.graph import StateGraph, END
+from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-EXTRACTION_PROMPT = """Jesteś Uszatek — agent ekstrakcji danych w aplikacji "Bez Pierdolenia".
-Twoim zadaniem jest przeanalizować ostatnią wymianę wiadomości między użytkownikiem
-a Pitbulem (AI trenerem personalnym) i zdecydować czy pojawiły się nowe ważne informacje
-o użytkowniku warte zapisania w jego profilu.
+from services.rag import search_knowledge as rag_search
+from config import supabase, supabase_admin
 
-Kontekst systemu: Pitbul rozmawia z userem. Szybcior generuje plany treningowe.
-Blacha aktualizuje podsumowanie rozmów. Ty (Uszatek) wyciągasz fakty o użytkowniku
-z każdej wiadomości i aktualizujesz jego profil. NIE ekstrahuj treści planów treningowych
-— te są zarządzane przez Szybciora i zapisywane osobno.
+
+USZATEK_SYSTEM_PROMPT = """Jesteś Uszatek — agent ekstrakcji danych użytkownika w systemie "Bez Pierdolenia".
 
 AKTUALNY PROFIL UŻYTKOWNIKA:
 {user_profile}
@@ -19,157 +21,225 @@ User: {user_message}
 Pitbul: {agent_response}
 
 ════════════════════════════════════════
-CO JEST WARTE ZAPISANIA
+TWOJE ZADANIE
 ════════════════════════════════════════
 
-Zapisuj jeśli użytkownik podał lub zmienił:
+Przeanalizuj wymianę wiadomości. Zdecyduj:
+1. Czy pojawiły się nowe informacje o użytkowniku warte zapisania?
+2. Jeśli tak — użyj narzędzi żeby je zapisać lub oznaczyć konflikt
+3. Jeśli nie ma nic do zapisania — zakończ bez działań
+
+════════════════════════════════════════
+CO ZAPISYWAĆ
+════════════════════════════════════════
+
+Zapisuj gdy user podał lub zmienił:
 - Wagę ciała, wzrost, wiek
-- Cel treningowy (masa / redukcja / siła / kondycja)
-- Liczbę dni treningowych w tygodniu
-- Nową kontuzję lub dolegliwość
-- Wyzdrowienie z kontuzji
+- Cel treningowy, liczbę dni, czas treningu
+- Nową kontuzję lub dolegliwość (ZAWSZE zapisuj)
 - Zmianę poziomu zaawansowania
-- Nowe ograniczenia (brak sprzętu, zmiana grafiku pracy)
-- Osiągnięcie treningowe (pierwszy pull-up, nowy rekord na ławce itp.)
-- Deklarację zmiany celu
-- Informację o jakości snu (pole: jakosc_snu)
-- Informację o poziomie stresu (pole: poziom_stresu)
-- Informację o diecie (pole: dieta)
-- Informację o codziennej aktywności (pole: aktywnosc_codzienna)
-- Przeszłe kontuzje (pole: kontuzje_przeszle)
-- Leki (pole: leki)
-
-════════════════════════════════════════
-WAŻNE ROZRÓŻNIENIE: WAGA CIAŁA vs CIĘŻAR TRENINGOWY
-════════════════════════════════════════
-
-Rozróżniaj wagę ciała od ciężaru na sztandze/maszynie:
-- "Ważę X kg" / "moja waga to X" / "zrzuciłem do X" → WAGA CIAŁA → pole: waga
-- "Wziąłem X kg" / "podniosłem X" / "robię X na ławce" / "przysiad X" → CIĘŻAR TRENINGOWY → pole: osiagniecia
-
-W razie wątpliwości: NIE aktualizuj wagi ciała. Lepiej pominąć niż zapisać błędnie.
-
-════════════════════════════════════════
-CO NIE JEST WARTE ZAPISANIA
-════════════════════════════════════════
+- Osiągnięcia treningowe (nowe rekordy, pierwszy pull-up itp.)
+- Jakość snu, poziom stresu, dietę, aktywność codzienną
 
 NIE ZAPISUJ:
-- Pytań o technikę ćwiczeń (to wiedza ogólna, nie dane o userze)
-- Jednorazowych sytuacji bez znaczenia długoterminowego ("dzisiaj słabo spałem")
-  CHYBA ŻE user mówi że to regularny problem ("od miesiąca źle sypiam")
-- Emocji chwilowych ("dzisiaj nie chce mi się trenować")
-- Pytań które user zadaje (to nie są fakty o nim)
+- Pytań o technikę ćwiczeń (wiedza ogólna, nie dane o userze)
+- Jednorazowych sytuacji ("dzisiaj słabo spałem") — chyba że to regularny problem
+- Emocji chwilowych
 
 ════════════════════════════════════════
-WYKRYWANIE KONFLIKTÓW
+WAGA CIAŁA vs CIĘŻAR TRENINGOWY
 ════════════════════════════════════════
 
-Oznacz konflikt (conflict_with_profile = true) jeśli:
-- Nowa wartość jest sprzeczna z tym co jest w profilu
-- Zmiana wagi ciała przekracza 10kg w stosunku do profilu
-- Zmiana celu (np. profil: masa, user mówi: redukcja)
-
-Przy konflikcie NIE nadpisuj profilu. Zapisz konflikt — agent zapyta usera
-o potwierdzenie w następnej wiadomości.
+"Ważę X kg" / "zrzuciłem do X" → waga ciała → pole: waga
+"Wziąłem X kg" / "robię X na ławce" → ciężar treningowy → pole: osiagniecia
+W razie wątpliwości: NIE aktualizuj wagi ciała.
 
 ════════════════════════════════════════
-KONTUZJE — ZAWSZE ZAPISUJ
+KIEDY FLAGOWAĆ KONFLIKT
 ════════════════════════════════════════
 
-Kontuzje i dolegliwości ZAWSZE zapisuj, nawet jeśli nie jesteś pewien
-czy to trwałe. Lepiej zapisać i agent dopyta, niż pominąć i agent
-zaproponuje ćwiczenie które pogorszy stan.
+Użyj create_conflict gdy:
+- Nowa wartość sprzeczna z profilem
+- Zmiana wagi ciała >10kg vs profil
+- Zmiana celu treningowego (np. masa → redukcja)
+
+Małe zmiany (dni treningowe, drobne korekty) → update_user_profile bezpośrednio.
+Nie jesteś pewien czy info jest realistyczne → verify_with_knowledge.
 
 ════════════════════════════════════════
-FORMAT ODPOWIEDZI — WYŁĄCZNIE JSON
+DOSTĘPNE POLA
 ════════════════════════════════════════
 
-Odpowiedz WYŁĄCZNIE w formacie JSON. Bez żadnego tekstu przed ani po.
-
-Jeśli nie ma nic do zapisania:
-{{"has_updates": false}}
-
-Jeśli są aktualizacje:
-{{"has_updates": true, "updates": {{"pole": "wartość"}}, "conflict_with_profile": false, "conflict_description": null}}
-
-Jeśli nowa informacja jest sprzeczna z profilem:
-{{"has_updates": true, "updates": {{"pole": "wartość"}}, "conflict_with_profile": true, "conflict_description": "Opis konfliktu i co zapytać usera."}}
-
-Możliwe pola w updates:
 waga, wzrost, wiek, cel, dni_treningowe, czas_treningu, miejsce_treningu,
 dostepny_sprzet, kontuzje, kontuzje_przeszle, ograniczenia, leki,
 osiagniecia, notatki, jakosc_snu, poziom_stresu, dieta, aktywnosc_codzienna, poziom"""
 
 
-def run_extraction_agent(user_id: str, user_message: str, agent_response: str, user_profile: dict):
+class UszatekState(TypedDict):
+    user_id: str
+    user_message: str
+    agent_response: str
+    user_profile: dict
+    messages: Annotated[list, operator.add]
+
+
+def _make_uszatek_tools(user_id: str):
+    @tool
+    def update_user_profile(field: str, value: str) -> str:
+        """
+        Aktualizuje konkretne pole w profilu użytkownika i zapisuje do audit logu.
+        field: nazwa pola (np. 'waga', 'cel', 'kontuzje')
+        value: nowa wartość jako string
+        """
+        # Pobierz aktualną wartość świeżo z bazy
+        current = supabase.table("user_profiles").select(field).eq("user_id", user_id).execute()
+        old_value = ""
+        if current.data and field in current.data[0]:
+            old_value = str(current.data[0][field] or "")
+
+        update_res = supabase_admin.table("user_profiles")\
+            .update({field: value})\
+            .eq("user_id", user_id)\
+            .execute()
+
+        if not update_res.data:
+            return f"BŁĄD: Nie udało się zaktualizować {field}."
+
+        supabase_admin.table("profile_changes").insert({
+            "user_id": user_id,
+            "field": field,
+            "old_value": old_value,
+            "new_value": str(value),
+            "source": "extraction_agent",
+        }).execute()
+
+        print(f"[USZATEK] {field}: '{old_value}' → '{value}'")
+        return f"Zaktualizowano {field}: '{value}'"
+
+    @tool
+    def create_conflict(field: str, old_value: str, new_value: str, description: str) -> str:
+        """
+        Flaguje konflikt gdy nowa informacja jest sprzeczna z profilem.
+        Nie nadpisuje profilu — Pitbul zapyta usera o potwierdzenie w następnej wiadomości.
+        field: nazwa pola
+        old_value: obecna wartość z profilu
+        new_value: nowa wartość podana przez usera
+        description: opis konfliktu i pytanie dla usera
+        """
+        supabase_admin.table("pending_conflicts").insert({
+            "user_id": user_id,
+            "field": field,
+            "old_value": old_value,
+            "new_value": new_value,
+            "description": description,
+            "resolved": False,
+        }).execute()
+
+        print(f"[USZATEK] Konflikt: {field} '{old_value}' → '{new_value}'")
+        return f"Konflikt zapisany dla pola {field}. Pitbul zapyta usera o potwierdzenie."
+
+    @tool
+    def verify_with_knowledge(claim: str) -> str:
+        """
+        Weryfikuje czy informacja od usera jest realistyczna.
+        Przeszukuje bazę wiedzy treningowej.
+        Używaj gdy nie jesteś pewien czy podana wartość jest prawdopodobna.
+        """
+        print(f"[USZATEK] verify_with_knowledge: '{claim}'")
+        return rag_search(claim)
+
+    return [update_user_profile, create_conflict, verify_with_knowledge]
+
+
+_uszatek_model = ChatAnthropic(
+    model="claude-haiku-4-5-20251001",
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    max_tokens=500,
+)
+
+
+def _uszatek_setup(state: UszatekState) -> UszatekState:
+    """Buduje initial messages."""
+    profile_str = json.dumps(state["user_profile"], ensure_ascii=False, separators=(',', ':'))
+    system_content = USZATEK_SYSTEM_PROMPT.format(
+        user_profile=profile_str,
+        user_message=state["user_message"],
+        agent_response=state["agent_response"],
+    )
+    messages = [
+        SystemMessage(content=system_content),
+        HumanMessage(content="Przeanalizuj wymianę wiadomości i wykonaj potrzebne aktualizacje profilu."),
+    ]
+    return {**state, "messages": messages}
+
+
+def _uszatek_agent(state: UszatekState) -> UszatekState:
+    tools = _make_uszatek_tools(state["user_id"])
+    model = _uszatek_model.bind_tools(tools)
+    print(f"[USZATEK] agent myśli...")
+    response = model.invoke(state["messages"])
+    return {**state, "messages": [response]}
+
+
+def _uszatek_should_continue(state: UszatekState) -> str:
+    last = state["messages"][-1]
+    if hasattr(last, "tool_calls") and last.tool_calls:
+        return "tools"
+    return END
+
+
+def _uszatek_tool_dispatcher(state: UszatekState) -> UszatekState:
+    tools = _make_uszatek_tools(state["user_id"])
+    tool_map = {t.name: t for t in tools}
+    last = state["messages"][-1]
+    results = []
+    for tc in last.tool_calls:
+        fn = tool_map.get(tc["name"])
+        if fn is None:
+            results.append(ToolMessage(content=f"Nieznane narzędzie: {tc['name']}", tool_call_id=tc["id"]))
+            continue
+        try:
+            result = fn.invoke(tc["args"])
+        except Exception as e:
+            print(f"[USZATEK] Błąd narzędzia {tc['name']}: {e}")
+            result = f"Błąd: {e}"
+        results.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+    return {**state, "messages": results}
+
+
+# ─── GRAPH ───────────────────────────────────────────────
+_builder = StateGraph(UszatekState)
+_builder.add_node("setup", _uszatek_setup)
+_builder.add_node("agent", _uszatek_agent)
+_builder.add_node("tools", _uszatek_tool_dispatcher)
+
+_builder.set_entry_point("setup")
+_builder.add_edge("setup", "agent")
+_builder.add_conditional_edges("agent", _uszatek_should_continue, {
+    "tools": "tools",
+    END: END,
+})
+_builder.add_edge("tools", "agent")
+
+uszatek_graph = _builder.compile()
+
+
+def run_extraction_agent(user_id: str, user_message: str, agent_response: str, user_profile: dict) -> None:
     """
-    Extraction Agent — uruchamiany w tle po każdej odpowiedzi agenta.
-    Wyciąga info o userze z rozmowy i aktualizuje profil.
+    Uszatek — wyciąga informacje o userze z rozmowy i aktualizuje profil.
+    Uruchamiany w tle po każdej wiadomości (gdy classifier wykryje info o userze).
     """
     try:
-        # Kompaktowy JSON — oszczędność ~50% tokenów vs indent=2
-        profile_str = json.dumps(user_profile, ensure_ascii=False, separators=(',', ':'))
-
-        prompt = EXTRACTION_PROMPT.format(
-            user_profile=profile_str,
-            user_message=user_message,
-            agent_response=agent_response,
-        )
-
-        response = claude_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        raw = response.content[0].text.strip()
-
-        # Usuń backticki jeśli są
-        if raw.startswith("```"):
-            raw = "\n".join(raw.split("\n")[1:])
-            raw = raw.rsplit("```", 1)[0].strip()
-
-        data = json.loads(raw)
-
-        if not data.get("has_updates"):
-            print(f"[EXTRACTION] Brak aktualizacji profilu")
-            return
-
-        updates = data.get("updates", {})
-        conflict = data.get("conflict_with_profile", False)
-        conflict_desc = data.get("conflict_description")
-
-        if conflict:
-            supabase_admin.table("pending_conflicts").insert({
+        print(f"\n[USZATEK] Analizuję wiadomość dla user: {user_id[:8]}...")
+        uszatek_graph.invoke(
+            {
                 "user_id": user_id,
-                "field": list(updates.keys())[0] if updates else "unknown",
-                "old_value": str(user_profile.get(list(updates.keys())[0], "")) if updates else "",
-                "new_value": str(list(updates.values())[0]) if updates else "",
-                "description": conflict_desc,
-                "resolved": False,
-            }).execute()
-            print(f"[EXTRACTION] Konflikt wykryty: {conflict_desc}")
-            return
-
-        if updates:
-            for field, new_value in updates.items():
-                old_value = user_profile.get(field, "")
-                supabase_admin.table("profile_changes").insert({
-                    "user_id": user_id,
-                    "field": field,
-                    "old_value": str(old_value) if old_value else "",
-                    "new_value": str(new_value),
-                    "source": "extraction_agent",
-                }).execute()
-
-            supabase.table("user_profiles")\
-                .update(updates)\
-                .eq("user_id", user_id)\
-                .execute()
-
-            print(f"[EXTRACTION] Zaktualizowano profil: {list(updates.keys())}")
-
-    except json.JSONDecodeError as e:
-        print(f"[EXTRACTION] Błąd parsowania JSON: {e}")
+                "user_message": user_message,
+                "agent_response": agent_response,
+                "user_profile": user_profile,
+                "messages": [],
+            },
+            config={"recursion_limit": 10},
+        )
     except Exception as e:
-        print(f"[EXTRACTION] Błąd: {e}")
+        print(f"[USZATEK] Błąd: {e}")

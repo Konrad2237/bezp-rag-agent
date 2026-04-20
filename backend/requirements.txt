@@ -12,3 +12,4 @@ pydantic-settings
 email-validator
 python-multipart
 httpx
+tavily-python

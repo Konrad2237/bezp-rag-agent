@@ -1,5 +1,6 @@
 from config import supabase, supabase_admin
 from datetime import datetime, timezone
+import json
 
 
 def get_or_create_session(user_id: str) -> str:
@@ -80,6 +81,83 @@ def get_message_count(user_id: str) -> int:
         .execute()
 
     return result.count or 0
+
+
+def get_plan_history(user_id: str, limit: int = 5) -> str:
+    """Zwraca skróconą historię planów treningowych usera."""
+    result = supabase_admin.table("plan_history")\
+        .select("plan_data, source, generation_reason, created_at")\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=True)\
+        .limit(limit)\
+        .execute()
+
+    if not result.data:
+        return "Brak historii planów — to będzie pierwszy plan użytkownika."
+
+    lines = []
+    for i, row in enumerate(result.data, 1):
+        plan = row["plan_data"]
+        exercises = []
+        for day in plan.get("days", [])[:2]:
+            for ex in day.get("exercises", [])[:3]:
+                exercises.append(ex.get("name", ""))
+        ex_str = ", ".join(exercises[:6]) if exercises else "brak"
+        lines.append(
+            f"Plan {i} ({row['created_at'][:10]}, {row.get('source', '?')}): "
+            f"{plan.get('plan_name', '?')} — cel: {plan.get('goal', '?')}, "
+            f"{plan.get('frequency_per_week', '?')}x/tydzień. "
+            f"Przykładowe ćwiczenia: {ex_str}."
+        )
+
+    return "\n".join(lines)
+
+
+def save_to_plan_history(user_id: str, plan_data: dict, source: str, generation_reason: str = "") -> None:
+    """Zapisuje snapshot planu do historii."""
+    supabase_admin.table("plan_history").insert({
+        "user_id": user_id,
+        "plan_data": plan_data,
+        "source": source,
+        "generation_reason": generation_reason,
+    }).execute()
+
+
+def get_unsummarized_count(user_id: str) -> int:
+    """Zwraca liczbę wiadomości od ostatniego podsumowania."""
+    summary = supabase.table("conversation_summaries")\
+        .select("messages_summarized")\
+        .eq("user_id", user_id)\
+        .limit(1)\
+        .execute()
+
+    messages_summarized = 0
+    if summary.data:
+        messages_summarized = summary.data[0].get("messages_summarized", 0) or 0
+
+    total = get_message_count(user_id)
+    return max(0, total - messages_summarized)
+
+
+def get_profile_changes(user_id: str, limit: int = 10) -> str:
+    """Zwraca ostatnie zmiany w profilu usera zapisane przez Uszatka."""
+    result = supabase.table("profile_changes")\
+        .select("field, old_value, new_value, created_at")\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=True)\
+        .limit(limit)\
+        .execute()
+
+    if not result.data:
+        return "Brak zmian w profilu."
+
+    lines = []
+    for r in result.data:
+        lines.append(
+            f"- {r['created_at'][:10]}: {r['field']}: "
+            f"'{r.get('old_value', '?')}' → '{r['new_value']}'"
+        )
+    return "\n".join(lines)
 
 
 def save_messages(user_id: str, session_id: str, user_message: str, agent_response: str, prompt_version: str = "v1.0"):

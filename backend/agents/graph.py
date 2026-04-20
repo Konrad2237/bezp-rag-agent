@@ -7,12 +7,14 @@ import operator
 import os
 
 from services.rag import search_knowledge as rag_search
+from services.search import search_web as web_search
 from services.memory import (
     get_user_profile,
     get_memory_summary,
     get_conversation_history,
     get_or_create_session,
     save_messages,
+    save_to_plan_history,
 )
 from agents.plan_generator import run_plan_generator
 
@@ -44,6 +46,17 @@ def search_knowledge_tool(query: str) -> str:
     return result
 
 
+@tool
+def search_web_tool(query: str) -> str:
+    """
+    Przeszukuje internet w poszukiwaniu aktualnych informacji treningowych.
+    Używaj gdy baza wiedzy (search_knowledge_tool) nie ma odpowiedzi na pytanie.
+    Przykłady: nowe techniki treningu, aktualne rekomendacje suplementów, sprzęt.
+    """
+    print(f"\n[WEB] Agent szuka w internecie: '{query}'")
+    return web_search(query)
+
+
 def _make_plan_tool(user_id: str):
     """Tworzy narzędzie generate_training_plan z wstrzykniętym user_id."""
     @tool
@@ -59,6 +72,8 @@ def _make_plan_tool(user_id: str):
         if "missing_fields" in result:
             missing = result["missing_fields"]
             return f"BRAK DANYCH DO GENEROWANIA PLANU. Brakuje: {', '.join(missing)}. Poproś usera o uzupełnienie quizu."
+        if "error" in result:
+            return f"BŁĄD GENEROWANIA PLANU: {result['error']}. Przeproś usera i zaproponuj spróbowanie jeszcze raz."
         plan = result["plan"]
         return f"PLAN WYGENEROWANY I ZAPISANY. Nazwa: {plan.get('plan_name', 'Plan treningowy')}. Cel: {plan.get('goal', '')}. Dni: {plan.get('frequency_per_week', '')}x/tydzień. Powiedz userowi że plan jest gotowy i może go zobaczyć w zakładce Plan."
 
@@ -125,10 +140,65 @@ def _make_edit_tool(user_id: str):
         update_res = _supabase.table("training_plans").update({"plan_data": plan}).eq("id", plan_id).execute()
         if not update_res.data:
             return f"BŁĄD: Zapis do bazy nie powiódł się. Spróbuj ponownie."
+
+        # Zapisz snapshot edycji do historii planów
+        save_to_plan_history(
+            user_id, plan,
+            source="pitbul_edit",
+            generation_reason=f"Pitbul zmienił '{old_exercise_name}' w '{day_label}'",
+        )
+
         print(f"[GRAPH] Plan zaktualizowany — zmieniono '{old_exercise_name}' w '{day_label}'")
         return f"ZMIANA ZAPISANA. '{old_exercise_name}' w '{day_label}' zostało zaktualizowane. Plan w zakładce Plan jest już aktualny."
 
     return edit_plan_exercise
+
+
+def _make_resolve_conflict_tool(user_id: str):
+    """Tworzy narzędzie resolve_conflict z wstrzykniętym user_id."""
+    @tool
+    def resolve_conflict(conflict_id: str, action: str) -> str:
+        """
+        Rozwiązuje oczekujący konflikt w profilu użytkownika po potwierdzeniu przez usera.
+        conflict_id: ID konfliktu z sekcji OCZEKUJĄCE KONFLIKTY w system prompcie
+        action: "accept" — zastosuj nową wartość | "reject" — zachowaj starą wartość
+        Wywołaj gdy user potwierdzi lub odrzuci zmianę którą Pitbul wyświetlił.
+        """
+        from config import supabase_admin as _s
+
+        # Zabezpieczenie przed halucynowanym ID — zwróć listę prawdziwych UUID
+        try:
+            res = _s.table("pending_conflicts").select("*").eq("id", conflict_id).execute()
+        except Exception:
+            pending = _s.table("pending_conflicts")\
+                .select("id, field, old_value, new_value")\
+                .eq("user_id", user_id).eq("resolved", False).execute()
+            if pending.data:
+                ids = "\n".join([
+                    f"- ID: {c['id']} | {c['field']}: '{c['old_value']}' → '{c['new_value']}'"
+                    for c in pending.data
+                ])
+                return f"BŁĄD: Nieprawidłowy conflict_id. Użyj jednego z poniższych:\n{ids}"
+            return "BŁĄD: Nieprawidłowy conflict_id. Brak nierozwiązanych konfliktów."
+
+        if not res.data:
+            return f"BŁĄD: Konflikt {conflict_id} nie istnieje lub już rozwiązany."
+
+        conflict = res.data[0]
+
+        if action == "accept":
+            _s.table("user_profiles").update({
+                conflict["field"]: conflict["new_value"]
+            }).eq("user_id", user_id).execute()
+            msg = f"Zaktualizowano {conflict['field']} z '{conflict['old_value']}' na '{conflict['new_value']}'."
+        else:
+            msg = f"Zachowano wartość '{conflict['old_value']}' dla {conflict['field']}."
+
+        _s.table("pending_conflicts").update({"resolved": True}).eq("id", conflict_id).execute()
+        print(f"[GRAPH] Konflikt {conflict_id} rozwiązany: {action}")
+        return msg
+
+    return resolve_conflict
 
 
 # ─── MODEL ───────────────────────────────────────────────
@@ -139,10 +209,17 @@ _base_model = ChatAnthropic(
 )
 
 def _get_model(user_id: str):
-    """Zwraca model z narzędziami (plan tool ma wstrzyknięty user_id)."""
+    """Zwraca model ze wszystkimi narzędziami (user_id wstrzyknięty do closures)."""
     plan_tool = _make_plan_tool(user_id)
     edit_tool = _make_edit_tool(user_id)
-    return _base_model.bind_tools([search_knowledge_tool, plan_tool, edit_tool])
+    resolve_tool = _make_resolve_conflict_tool(user_id)
+    return _base_model.bind_tools([
+        search_knowledge_tool,
+        search_web_tool,
+        plan_tool,
+        edit_tool,
+        resolve_tool,
+    ])
 
 
 # ─── SYSTEM PROMPT (PROMPT-01 v2.1) ──────────────────────
@@ -166,7 +243,7 @@ def build_system_prompt(profile: dict, summary: str, session_type: str, pending_
     # Oczekujące konflikty
     if pending_conflicts:
         conflicts_str = "\n".join([
-            f"- Pole '{c.get('field')}': było '{c.get('old_value')}', teraz '{c.get('new_value')}'. {c.get('description', '')}"
+            f"- [ID: {c.get('id')}] Pole '{c.get('field')}': było '{c.get('old_value')}', teraz '{c.get('new_value')}'. {c.get('description', '')}"
             for c in pending_conflicts
         ])
     else:
@@ -309,34 +386,34 @@ Gdy user pyta "czy mam już plan?" lub "kiedy plan będzie gotowy?" — wyjaśni
 TWOJE NARZĘDZIA
 ════════════════════════════════════════
 
-Masz dostępne narzędzia: search_knowledge_tool i generate_training_plan.
-
 **search_knowledge_tool** — baza wiedzy treningowej:
-→ UŻYWAJ gdy user pyta o coś co wymaga wiedzy faktualnej:
-  ćwiczenia, progresja, technika, plany, suplementacja, regeneracja
-→ NIE UŻYWAJ przy: powitaniach, pytaniach o samopoczucie,
-  prostych odpowiedziach które nie wymagają wiedzy z bazy
-→ Sam formułuj query — nie kopiuj dosłownie wiadomości usera.
-  User pisze "co robić jak boli bark?" → szukaj "kontuzja bark alternatywne ćwiczenia"
-→ Jeśli narzędzie zwróci "Brak materiałów" — powiedz wprost:
-  "Tego nie mam w swojej bazie, szczerze. Zapytaj trenera."
-→ NIGDY nie generuj konkretnych liczb (ciężary, dawki, kalorie, gramy makro)
-  jeśli nie masz ich z bazy wiedzy
+→ UŻYWAJ gdy user pyta o ćwiczenia, progresję, technikę, suplementy, regenerację
+→ NIE UŻYWAJ przy powitaniach i prostych rozmowach
+→ Sam formułuj query. "co robić jak boli bark?" → szukaj "kontuzja bark alternatywy"
+→ Jeśli zwróci "Brak materiałów" — powiedz wprost i zaproponuj konsultację z trenerem
+→ NIGDY nie generuj konkretnych liczb których nie masz z bazy
+
+**search_web_tool** — web search (Tavily):
+→ UŻYWAJ gdy search_knowledge_tool nie ma odpowiedzi
+→ Aktualne informacje, nowe techniki, sprzęt, suplementy których nie ma w ebooku
+→ Zawsze zaznacz że info pochodzi z internetu, nie z bazy wiedzy ebooka
 
 **generate_training_plan** — Szybcior generuje plan:
-→ UŻYWAJ gdy user pyta o plan treningowy, program, schedule ćwiczeń
+→ UŻYWAJ gdy user prosi o plan treningowy, program, schedule
 → Wywołaj z krótkim uzasadnieniem po polsku (argument reason)
-→ Jeśli Szybcior zwróci BRAK DANYCH — powiedz userowi żeby uzupełnił quiz
-→ Jeśli PLAN WYGENEROWANY — poinformuj użytkownika krótko i powiedz
-  że może go zobaczyć w zakładce Plan w aplikacji
+→ Jeśli BRAK DANYCH — powiedz userowi żeby uzupełnił quiz
+→ Jeśli PLAN WYGENEROWANY — poinformuj krótko, zakładka Plan
 
-**edit_plan_exercise** — modyfikuje konkretne ćwiczenie w istniejącym planie:
-→ UŻYWAJ gdy user chce: zamienić ćwiczenie, zmienić serie/powtórzenia/przerwy, dodać uwagę
-→ To jest ZAWSZE lepszy wybór niż generate_training_plan dla drobnych zmian
-→ Podaj dokładną nazwę ćwiczenia z sekcji AKTUALNY PLAN powyżej
-→ Po zmianie powiedz że plan w zakładce Plan jest już zaktualizowany
-→ PRZYKŁAD: user pisze "zmień przysiad na wykroki" → wywołaj edit_plan_exercise,
-  NIE generate_training_plan
+**edit_plan_exercise** — modyfikuje ćwiczenie w istniejącym planie:
+→ UŻYWAJ gdy user chce zmienić ćwiczenie, serie, powtórzenia, przerwy
+→ ZAWSZE lepszy wybór niż generate_training_plan dla drobnych zmian
+→ Podaj dokładną nazwę z sekcji AKTUALNY PLAN
+
+**resolve_conflict** — rozwiązuje oczekujący konflikt:
+→ UŻYWAJ gdy user potwierdzi lub odrzuci zmianę z sekcji OCZEKUJĄCE KONFLIKTY
+→ conflict_id: weź z sekcji OCZEKUJĄCE KONFLIKTY (format [ID: ...])
+→ action: "accept" gdy user potwierdza | "reject" gdy user odrzuca
+→ PRZYKŁAD: user mówi "tak, zaktualizuj" → resolve_conflict(id, "accept")
 
 ════════════════════════════════════════
 ZAKRES TWOICH KOMPETENCJI
@@ -537,7 +614,8 @@ async def tool_dispatcher(state: AgentState) -> AgentState:
     """Node: wywołuje narzędzia z wstrzykniętym user_id dla plan tool."""
     plan_tool = _make_plan_tool(state["user_id"])
     edit_tool = _make_edit_tool(state["user_id"])
-    all_tools = {t.name: t for t in [search_knowledge_tool, plan_tool, edit_tool]}
+    resolve_tool = _make_resolve_conflict_tool(state["user_id"])
+    all_tools = {t.name: t for t in [search_knowledge_tool, search_web_tool, plan_tool, edit_tool, resolve_tool]}
 
     last_message = state["messages"][-1]
     tool_results = []

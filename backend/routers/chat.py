@@ -6,8 +6,8 @@ from middleware import get_current_user
 from agents.graph import stream_agent
 from agents.extraction import run_extraction_agent
 from agents.summarizer import run_summarizer_agent
-from services.memory import get_user_profile, get_message_count
-from config import supabase
+from services.memory import get_user_profile, get_unsummarized_count
+from config import supabase, claude_client
 import asyncio
 import json
 
@@ -18,14 +18,33 @@ class ChatRequest(BaseModel):
     message: str
 
 
+async def _should_run_extraction(user_message: str) -> bool:
+    """Haiku klasyfikuje czy wiadomość zawiera informacje o userze warte zapisania."""
+    try:
+        response = await run_in_threadpool(
+            lambda: claude_client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=5,
+                messages=[{"role": "user", "content":
+                    f"Czy ta wiadomość zawiera informacje o użytkowniku "
+                    f"(waga, cel, kontuzja, trening, sprzęt, sen, dieta, osiągnięcia)? "
+                    f"Odpowiedz tylko: tak lub nie.\n\n{user_message}"
+                }]
+            )
+        )
+        return "tak" in response.content[0].text.lower()
+    except Exception as e:
+        print(f"[CLASSIFIER] Błąd: {e} — pomijam Uszatka")
+        return False
+
+
 async def background_tasks(user_id: str, user_message: str, agent_response: str, user_profile: dict):
-    """Uruchamia Extraction i ewentualnie Summarizer w tle."""
-    await run_in_threadpool(
-        run_extraction_agent,
-        user_id, user_message, agent_response, user_profile
-    )
-    count = await run_in_threadpool(get_message_count, user_id)
-    if count > 0 and count % 10 == 0:
+    """Uruchamia Uszatka (gdy classifier wykryje info o userze) i Blachę (gdy >=15 nowych wiad.)."""
+    if await _should_run_extraction(user_message):
+        await run_in_threadpool(run_extraction_agent, user_id, user_message, agent_response, user_profile)
+
+    unsummarized = await run_in_threadpool(get_unsummarized_count, user_id)
+    if unsummarized >= 15:
         await run_in_threadpool(run_summarizer_agent, user_id)
 
 
