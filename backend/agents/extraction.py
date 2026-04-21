@@ -88,8 +88,9 @@ def _make_uszatek_tools(user_id: str):
     def update_user_profile(field: str, value: str) -> str:
         """
         Aktualizuje konkretne pole w profilu użytkownika i zapisuje do audit logu.
-        field: nazwa pola (np. 'waga', 'cel', 'kontuzje')
-        value: nowa wartość jako string
+        ZAWSZE podawaj oba parametry. Przykład: field='waga', value='85kg'
+        field: nazwa pola (np. 'waga', 'cel', 'kontuzje', 'notatki')
+        value: nowa wartość jako string — WYMAGANE, nie pomijaj
         """
         # Pobierz aktualną wartość świeżo z bazy
         current = supabase.table("user_profiles").select(field).eq("user_id", user_id).execute()
@@ -239,7 +240,7 @@ def run_extraction_agent(user_id: str, user_message: str, agent_response: str, u
                 "user_profile": user_profile,
                 "messages": [],
             },
-            config={"recursion_limit": 10},
+            config={"recursion_limit": 8},
         )
     except Exception as e:
         print(f"[USZATEK] Błąd: {e}")

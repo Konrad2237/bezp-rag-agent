@@ -286,6 +286,6 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
             "messages": [],
             "result": {},
         },
-        config={"recursion_limit": 15},
+        config={"recursion_limit": 10},
     )
     return result.get("result", {"error": "Brak wyniku"})

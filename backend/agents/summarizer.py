@@ -195,7 +195,7 @@ def run_summarizer_agent(user_id: str) -> None:
                 "previous_summary": previous_summary,
                 "messages": [],
             },
-            config={"recursion_limit": 12},
+            config={"recursion_limit": 8},
         )
     except Exception as e:
         print(f"[BLACHA] Błąd: {e}")

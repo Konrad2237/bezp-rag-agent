@@ -94,13 +94,26 @@ export default function ChatPage() {
   }, [messages])
 
   // Cleanup na unmount — tylko czyści interval, NIE abortuje fetcha
-  // Fetch kończy się w tle i zapisuje odpowiedź do sessionStorage
   useEffect(() => {
     return () => {
       if (typingIntervalRef.current) {
         clearInterval(typingIntervalRef.current)
       }
     }
+  }, [])
+
+  // Przy zamknięciu strony — odpala Blachę jeśli zostały niespodsumowane wiadomości
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const token = localStorage.getItem('bezp_token')
+      if (!token) return
+      navigator.sendBeacon(
+        `${API_URL}/chat/session-end`,
+        new Blob([JSON.stringify({ token })], { type: 'application/json' })
+      )
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
   async function sendMessage() {

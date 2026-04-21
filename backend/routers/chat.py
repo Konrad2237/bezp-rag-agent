@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from agents.extraction import run_extraction_agent
 from agents.summarizer import run_summarizer_agent
 from services.memory import get_user_profile, get_unsummarized_count
 from config import supabase, claude_client
+from datetime import datetime, timezone, timedelta
 import asyncio
 import json
 
@@ -16,6 +17,10 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     message: str
+
+
+class SessionEndRequest(BaseModel):
+    token: str
 
 
 async def _should_run_extraction(user_message: str) -> bool:
@@ -139,3 +144,40 @@ async def chat(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/session-end")
+async def session_end(body: SessionEndRequest, bg: BackgroundTasks):
+    """Wywoływany przez frontend przy zamknięciu strony (beforeunload + sendBeacon).
+    Odpala Blachę jeśli zostały niespodsumowane wiadomości (< 15, bo >= 15 obsługuje per-message trigger).
+    Token idzie w body bo sendBeacon nie obsługuje custom headers.
+    """
+    try:
+        response = supabase.auth.get_user(body.token)
+        if not response.user:
+            return {"status": "unauthorized"}
+        user_id = response.user.id
+    except Exception:
+        return {"status": "unauthorized"}
+
+    unsummarized = await run_in_threadpool(get_unsummarized_count, user_id)
+    if unsummarized <= 0 or unsummarized >= 15:
+        return {"status": "skipped"}
+
+    # Cooldown — jeśli Blacha działała < 30 min temu, pomijamy
+    summary = supabase.table("conversation_summaries")\
+        .select("updated_at")\
+        .eq("user_id", user_id)\
+        .limit(1)\
+        .execute()
+
+    if summary.data and summary.data[0].get("updated_at"):
+        last_updated = datetime.fromisoformat(
+            summary.data[0]["updated_at"].replace("Z", "+00:00")
+        )
+        if (datetime.now(timezone.utc) - last_updated) < timedelta(minutes=30):
+            return {"status": "cooldown"}
+
+    bg.add_task(run_summarizer_agent, user_id)
+    print(f"[SESSION-END] Odpalam Blachę dla user: {user_id[:8]}... ({unsummarized} wiad.)")
+    return {"status": "ok"}
