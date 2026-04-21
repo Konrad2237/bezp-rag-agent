@@ -265,6 +265,13 @@ export default function ChatPage() {
   }
 
   function handleLogout() {
+    const token = localStorage.getItem('bezp_token')
+    if (token) {
+      navigator.sendBeacon(
+        `${API_URL}/chat/session-end`,
+        new Blob([JSON.stringify({ token })], { type: 'application/json' })
+      )
+    }
     localStorage.removeItem('bezp_token')
     localStorage.removeItem('bezp_refresh_token')
     sessionStorage.removeItem('bezp_chat_messages')

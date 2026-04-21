@@ -10,10 +10,8 @@ from config import supabase, supabase_admin
 from services.memory import get_profile_changes as _fetch_profile_changes
 
 
-BLACHA_SYSTEM_PROMPT = """Jesteś Blacha — agent zarządzania pamięcią w systemie "Bez Pierdolenia".
-
-POPRZEDNIE PODSUMOWANIE:
-{previous_summary}
+# Statyczna część — cachowana między wywołaniami w tej samej sesji
+BLACHA_SYSTEM_PROMPT_STATIC = """Jesteś Blacha — agent zarządzania pamięcią w systemie "Bez Pierdolenia".
 
 ════════════════════════════════════════
 TWÓJ PROCES
@@ -22,6 +20,7 @@ TWÓJ PROCES
 1. Wywołaj get_recent_messages — pobierz ostatnie wiadomości z rozmów
 2. Wywołaj get_profile_changes — sprawdź co Uszatek ostatnio zaktualizował w profilu
 3. Stwórz zaktualizowane podsumowanie i zapisz przez update_summary
+4. Po zapisaniu — zakończ. Nie pisz żadnych dodatkowych wiadomości.
 
 ════════════════════════════════════════
 ZASADY PODSUMOWANIA
@@ -110,13 +109,15 @@ _blacha_model = ChatAnthropic(
 
 
 def _blacha_setup(state: BlachaState) -> BlachaState:
-    """Buduje initial messages."""
-    system_content = BLACHA_SYSTEM_PROMPT.format(
-        previous_summary=state["previous_summary"] or "Brak poprzedniego podsumowania.",
-    )
+    """Buduje initial messages. System prompt cachowany, previous_summary w human message."""
+    previous_summary = state["previous_summary"] or "Brak poprzedniego podsumowania."
     messages = [
-        SystemMessage(content=system_content),
-        HumanMessage(content="Pobierz wiadomości i zaktualizuj podsumowanie."),
+        SystemMessage(content=[{
+            "type": "text",
+            "text": BLACHA_SYSTEM_PROMPT_STATIC,
+            "cache_control": {"type": "ephemeral"},
+        }]),
+        HumanMessage(content=f"POPRZEDNIE PODSUMOWANIE:\n{previous_summary}\n\nPobierz wiadomości i zaktualizuj podsumowanie."),
     ]
     return {**state, "messages": messages}
 
@@ -134,6 +135,14 @@ def _blacha_should_continue(state: BlachaState) -> str:
     if hasattr(last, "tool_calls") and last.tool_calls:
         return "tools"
     return END
+
+
+def _blacha_after_tools(state: BlachaState) -> str:
+    """Po update_summary kończ od razu — nie wracaj do agenta po potwierdzenie."""
+    for msg in reversed(state["messages"]):
+        if isinstance(msg, ToolMessage) and "Podsumowanie zapisane" in str(msg.content):
+            return END
+    return "agent"
 
 
 def _blacha_tool_dispatcher(state: BlachaState) -> BlachaState:
@@ -167,7 +176,10 @@ _builder.add_conditional_edges("agent", _blacha_should_continue, {
     "tools": "tools",
     END: END,
 })
-_builder.add_edge("tools", "agent")
+_builder.add_conditional_edges("tools", _blacha_after_tools, {
+    "agent": "agent",
+    END: END,
+})
 
 blacha_graph = _builder.compile()
 
