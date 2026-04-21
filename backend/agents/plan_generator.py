@@ -18,16 +18,7 @@ from services.memory import (
 from config import supabase_admin
 
 
-SZYBCIOR_SYSTEM_PROMPT = """Jesteś Szybcior — wyspecjalizowany agent generowania planów treningowych w systemie "Bez Pierdolenia".
-
-PROFIL UŻYTKOWNIKA:
-{user_profile}
-
-KONTEKST Z ROZMÓW:
-{memory_summary}
-
-POWÓD GENEROWANIA:
-{generation_reason}
+SZYBCIOR_STATIC_PROMPT = """Jesteś Szybcior — wyspecjalizowany agent generowania planów treningowych w systemie "Bez Pierdolenia".
 
 ════════════════════════════════════════
 TWÓJ PROCES
@@ -100,7 +91,7 @@ def check_missing_fields(profile: dict) -> list[str]:
 
 
 def _szybcior_setup(state: SzybciorState) -> SzybciorState:
-    """Buduje initial messages z profilu i kontekstu."""
+    """Buduje initial messages. System prompt cachowany, dynamic data w HumanMessage."""
     user_id = state["user_id"]
     print(f"\n[SZYBCIOR] setup dla user: {user_id[:8]}...")
 
@@ -111,15 +102,24 @@ def _szybcior_setup(state: SzybciorState) -> SzybciorState:
     profile_lines = [f"- {k}: {v}" for k, v in profile.items() if v and k not in SKIP]
     profile_str = "\n".join(profile_lines) if profile_lines else "Brak danych profilu."
 
-    system_content = SZYBCIOR_SYSTEM_PROMPT.format(
-        user_profile=profile_str,
-        memory_summary=summary or "Brak historii rozmów.",
-        generation_reason=state["generation_reason"],
-    )
+    dynamic_context = f"""PROFIL UŻYTKOWNIKA:
+{profile_str}
+
+KONTEKST Z ROZMÓW:
+{summary or "Brak historii rozmów."}
+
+POWÓD GENEROWANIA:
+{state["generation_reason"]}
+
+Wygeneruj plan treningowy. Zacznij od sprawdzenia historii planów."""
 
     messages = [
-        SystemMessage(content=system_content),
-        HumanMessage(content="Wygeneruj plan treningowy. Zacznij od sprawdzenia historii planów."),
+        SystemMessage(content=[{
+            "type": "text",
+            "text": SZYBCIOR_STATIC_PROMPT,
+            "cache_control": {"type": "ephemeral"},
+        }]),
+        HumanMessage(content=dynamic_context),
     ]
     return {**state, "messages": messages}
 
@@ -149,7 +149,7 @@ def _make_szybcior_tools(user_id: str):
 _szybcior_model = ChatAnthropic(
     model="claude-sonnet-4-20250514",
     api_key=os.getenv("ANTHROPIC_API_KEY"),
-    max_tokens=4096,
+    max_tokens=2048,
 )
 
 
@@ -286,6 +286,6 @@ def run_plan_generator(user_id: str, generation_reason: str = "user poprosił o 
             "messages": [],
             "result": {},
         },
-        config={"recursion_limit": 10},
+        config={"recursion_limit": 15},
     )
     return result.get("result", {"error": "Brak wyniku"})

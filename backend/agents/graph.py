@@ -203,7 +203,7 @@ def _make_resolve_conflict_tool(user_id: str):
 
 # ─── MODEL ───────────────────────────────────────────────
 _base_model = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
+    model="claude-haiku-4-5-20251001",
     api_key=os.getenv("ANTHROPIC_API_KEY"),
     max_tokens=1024,
 )
@@ -498,7 +498,7 @@ def fetch_context(state: AgentState) -> AgentState:
     profile = get_user_profile(user_id)
     summary = get_memory_summary(user_id)
     session_id = get_or_create_session(user_id)
-    history = get_conversation_history(user_id, limit=10)
+    history = get_conversation_history(user_id, limit=6)
 
     # Pobierz nierozwiązane konflikty
     conflicts_result = supabase.table("pending_conflicts")\
