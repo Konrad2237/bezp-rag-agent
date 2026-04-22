@@ -126,6 +126,12 @@ export default function PlanPage() {
             <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
               Plan
             </span>
+            <Link
+              href="/settings"
+              className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+            >
+              Ustawienia
+            </Link>
           </nav>
         </div>
       </header>

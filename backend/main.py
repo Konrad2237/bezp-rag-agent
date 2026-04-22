@@ -7,7 +7,7 @@ from pathlib import Path
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from routers import auth, quiz, chat, plan
+from routers import auth, quiz, chat, plan, settings
 
 
 @asynccontextmanager
@@ -41,6 +41,7 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(quiz.router, prefix="/quiz", tags=["quiz"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(plan.router)
+app.include_router(settings.router, prefix="/settings", tags=["settings"])
 
 
 @app.get("/health")

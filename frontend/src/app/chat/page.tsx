@@ -311,6 +311,18 @@ export default function ChatPage() {
                 Plan
               </Link>
             )}
+            {(loading || isTyping) ? (
+              <span className="px-3 py-1.5 text-sm rounded text-zinc-700 cursor-not-allowed">
+                Ustawienia
+              </span>
+            ) : (
+              <Link
+                href="/settings"
+                className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+              >
+                Ustawienia
+              </Link>
+            )}
           </nav>
           <button
             onClick={handleLogout}
