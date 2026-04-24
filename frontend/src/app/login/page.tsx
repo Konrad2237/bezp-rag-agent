@@ -6,6 +6,8 @@ import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+const inputCls = 'w-full bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00FF88] transition-colors placeholder:text-zinc-600'
+
 export default function LoginPage() {
   const router = useRouter()
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -123,78 +125,63 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[#0D0D0D] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-white mb-1 text-center">BEZ PIERDOLENIA</h1>
-        <p className="text-zinc-500 text-sm text-center mb-8">AI trener personalny</p>
+
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-full bg-[#00FF88] flex items-center justify-center font-bold text-black text-2xl mb-3"
+            style={{ boxShadow: '0 0 30px rgba(0,255,136,0.3)' }}
+          >
+            P
+          </div>
+          <h1 className="text-xl font-bold text-white">PITBUL</h1>
+          <p className="text-[#00FF88] text-xs mt-1">Twój trener AI</p>
+        </div>
 
         {/* Przełącznik trybu */}
-        <div className="flex mb-6 bg-zinc-900 rounded p-1">
+        <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">
           <button
             onClick={() => switchMode('login')}
-            className={`flex-1 py-2 text-sm rounded transition-colors ${
-              mode === 'login' ? 'bg-white text-black font-medium' : 'text-zinc-400 hover:text-white'
+            className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
+              mode === 'login' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
             }`}
           >
             Logowanie
           </button>
           <button
             onClick={() => switchMode('register')}
-            className={`flex-1 py-2 text-sm rounded transition-colors ${
-              mode === 'register' ? 'bg-white text-black font-medium' : 'text-zinc-400 hover:text-white'
+            className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
+              mode === 'register' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
             }`}
           >
             Rejestracja
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {mode === 'register' && (
             <>
-              <input
-                type="text"
-                placeholder="Imię"
-                value={imie}
-                onChange={e => setImie(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
-              />
-              <input
-                type="text"
-                placeholder="Nazwisko"
-                value={nazwisko}
-                onChange={e => setNazwisko(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
-              />
+              <input type="text" placeholder="Imię" value={imie} onChange={e => setImie(e.target.value)} className={inputCls} />
+              <input type="text" placeholder="Nazwisko" value={nazwisko} onChange={e => setNazwisko(e.target.value)} className={inputCls} />
             </>
           )}
 
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
-          />
+          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} />
           <input
             type="password"
             placeholder="Hasło"
             value={password}
             onChange={e => setPassword(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && mode === 'login' && handleLogin()}
-            className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
+            className={inputCls}
           />
 
           {mode === 'register' && (
             <>
-              <input
-                type="password"
-                placeholder="Powtórz hasło"
-                value={passwordConfirm}
-                onChange={e => setPasswordConfirm(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500"
-              />
+              <input type="password" placeholder="Powtórz hasło" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} className={inputCls} />
               <label className="flex items-start gap-3 cursor-pointer" onClick={() => setGdprConsent(v => !v)}>
-                <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${gdprConsent ? 'bg-white border-white' : 'border-zinc-600'}`}>
+                <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${gdprConsent ? 'bg-[#00FF88] border-[#00FF88]' : 'border-[#2A2A2A]'}`}>
                   {gdprConsent && (
                     <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M2 6l3 3 5-5" />
@@ -214,16 +201,21 @@ export default function LoginPage() {
           )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
-          {message && <p className="text-green-400 text-sm">{message}</p>}
+          {message && <p className="text-[#00FF88] text-sm">{message}</p>}
 
           <button
             onClick={mode === 'login' ? handleLogin : handleRegister}
             disabled={loading}
-            className="w-full bg-white text-black font-medium py-3 rounded hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+            className="w-full bg-[#00FF88] text-black font-bold py-3.5 rounded-xl hover:brightness-110 disabled:opacity-50 transition-all active:scale-[0.97]"
+            style={{ boxShadow: '0 0 20px rgba(0,255,136,0.2)' }}
           >
             {loading ? '...' : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
           </button>
         </div>
+
+        <p className="text-zinc-600 text-xs text-center mt-6">
+          <Link href="/" className="hover:text-zinc-400 transition-colors">← Wróć na stronę główną</Link>
+        </p>
       </div>
     </div>
   )

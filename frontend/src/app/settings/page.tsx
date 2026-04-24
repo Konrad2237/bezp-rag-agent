@@ -14,6 +14,8 @@ const CEL_OPTIONS = [
   { value: 'kondycja', label: 'Kondycja' },
 ]
 
+const inputCls = 'w-full bg-[#111111] border border-[#2A2A2A] rounded-xl px-3 py-2.5 text-[#F2EEE8] text-sm focus:outline-none focus:border-[#00FF88] transition-colors'
+
 export default function SettingsPage() {
   const router = useRouter()
 
@@ -53,7 +55,7 @@ export default function SettingsPage() {
           setCel(data.cel ?? '')
         }
       } catch {
-        // ignoruj — user zobaczy puste pola
+        // ignoruj
       } finally {
         setLoading(false)
       }
@@ -189,35 +191,41 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="h-[100dvh] bg-zinc-950 flex items-center justify-center">
-        <p className="text-zinc-500">Ładuję ustawienia...</p>
+      <div className="h-[100dvh] bg-[#0D0D0D] flex items-center justify-center">
+        <p className="text-zinc-500 text-sm">Ładuję ustawienia...</p>
       </div>
     )
   }
 
   return (
-    <div className="h-[100dvh] bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-[#0D0D0D] flex flex-col overflow-hidden">
+
       {/* Header */}
-      <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-white font-bold leading-tight">BEZ PIERDOLENIA</h1>
-          <p className="text-zinc-500 text-xs">z Pitbulem</p>
+      <header className="border-b border-[#1A1A1A] px-4 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-[#00FF88] flex items-center justify-center font-bold text-black text-sm shrink-0">
+            P
+          </div>
+          <div>
+            <p className="text-white font-semibold text-sm leading-none mb-1">Pitbul</p>
+            <p className="text-[#00FF88] text-xs">● online 24/7</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
-          <nav className="flex gap-1 bg-zinc-900 rounded p-1">
-            <Link href="/chat" className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors">
+          <nav className="flex gap-1 bg-[#111111] border border-[#2A2A2A] rounded-lg p-1">
+            <Link href="/chat" className="px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white transition-colors">
               Chat
             </Link>
-            <Link href="/plan" className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors">
+            <Link href="/plan" className="px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white transition-colors">
               Plan
             </Link>
-            <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
+            <span className="px-3 py-1.5 text-xs rounded-md bg-[#00FF88] text-black font-bold">
               Ustawienia
             </span>
           </nav>
           <button
             onClick={handleLogout}
-            className="text-zinc-500 hover:text-white text-sm transition-colors"
+            className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
           >
             Wyloguj
           </button>
@@ -228,10 +236,10 @@ export default function SettingsPage() {
 
         {/* Profil treningowy */}
         <section>
-          <h2 className="text-white font-semibold mb-4">Profil treningowy</h2>
-          <form onSubmit={saveProfile} className="space-y-4">
+          <h2 className="text-[#00FF88] font-semibold mb-4 text-sm uppercase tracking-wide">Profil treningowy</h2>
+          <form onSubmit={saveProfile} className="space-y-3">
             <div>
-              <label className="block text-zinc-400 text-sm mb-1">Waga (kg)</label>
+              <label className="block text-zinc-400 text-xs mb-1.5">Waga (kg)</label>
               <input
                 type="number"
                 min={30}
@@ -239,32 +247,32 @@ export default function SettingsPage() {
                 step={0.1}
                 value={waga}
                 onChange={e => setWaga(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+                className={inputCls}
                 placeholder="np. 82.5"
               />
             </div>
             <div>
-              <label className="block text-zinc-400 text-sm mb-1">Cel treningowy</label>
+              <label className="block text-zinc-400 text-xs mb-1.5">Cel treningowy</label>
               <select
                 value={cel}
                 onChange={e => setCel(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+                className={inputCls}
               >
                 {CEL_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               <button
                 type="submit"
                 disabled={profileStatus === 'saving'}
-                className="bg-white text-black text-sm font-medium px-4 py-2 rounded hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                className="bg-[#00FF88] text-black text-sm font-bold px-5 py-2.5 rounded-xl hover:brightness-110 transition-all disabled:opacity-50 active:scale-[0.97]"
               >
                 {profileStatus === 'saving' ? 'Zapisuję...' : 'Zapisz'}
               </button>
               {profileMsg && (
-                <span className={`text-sm ${profileStatus === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm ${profileStatus === 'ok' ? 'text-[#00FF88]' : 'text-red-400'}`}>
                   {profileMsg}
                 </span>
               )}
@@ -272,33 +280,33 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        <div className="border-t border-zinc-800" />
+        <div className="border-t border-[#1A1A1A]" />
 
         {/* Email */}
         <section>
-          <h2 className="text-white font-semibold mb-4">Zmiana emaila</h2>
-          <form onSubmit={saveEmail} className="space-y-4">
+          <h2 className="text-[#00FF88] font-semibold mb-4 text-sm uppercase tracking-wide">Zmiana emaila</h2>
+          <form onSubmit={saveEmail} className="space-y-3">
             <div>
-              <label className="block text-zinc-400 text-sm mb-1">Nowy email</label>
+              <label className="block text-zinc-400 text-xs mb-1.5">Nowy email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+                className={inputCls}
                 placeholder="nowy@email.com"
               />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               <button
                 type="submit"
                 disabled={emailStatus === 'saving'}
-                className="bg-white text-black text-sm font-medium px-4 py-2 rounded hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                className="bg-[#00FF88] text-black text-sm font-bold px-5 py-2.5 rounded-xl hover:brightness-110 transition-all disabled:opacity-50 active:scale-[0.97]"
               >
                 {emailStatus === 'saving' ? 'Zmieniam...' : 'Zmień email'}
               </button>
               {emailMsg && (
-                <span className={`text-sm ${emailStatus === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm ${emailStatus === 'ok' ? 'text-[#00FF88]' : 'text-red-400'}`}>
                   {emailMsg}
                 </span>
               )}
@@ -306,34 +314,34 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        <div className="border-t border-zinc-800" />
+        <div className="border-t border-[#1A1A1A]" />
 
         {/* Hasło */}
         <section>
-          <h2 className="text-white font-semibold mb-4">Zmiana hasła</h2>
-          <form onSubmit={savePassword} className="space-y-4">
+          <h2 className="text-[#00FF88] font-semibold mb-4 text-sm uppercase tracking-wide">Zmiana hasła</h2>
+          <form onSubmit={savePassword} className="space-y-3">
             <div>
-              <label className="block text-zinc-400 text-sm mb-1">Nowe hasło</label>
+              <label className="block text-zinc-400 text-xs mb-1.5">Nowe hasło</label>
               <input
                 type="password"
                 required
                 minLength={8}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+                className={inputCls}
                 placeholder="min. 8 znaków"
               />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               <button
                 type="submit"
                 disabled={passwordStatus === 'saving'}
-                className="bg-white text-black text-sm font-medium px-4 py-2 rounded hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                className="bg-[#00FF88] text-black text-sm font-bold px-5 py-2.5 rounded-xl hover:brightness-110 transition-all disabled:opacity-50 active:scale-[0.97]"
               >
                 {passwordStatus === 'saving' ? 'Zmieniam...' : 'Zmień hasło'}
               </button>
               {passwordMsg && (
-                <span className={`text-sm ${passwordStatus === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`text-sm ${passwordStatus === 'ok' ? 'text-[#00FF88]' : 'text-red-400'}`}>
                   {passwordMsg}
                 </span>
               )}
@@ -341,11 +349,11 @@ export default function SettingsPage() {
           </form>
         </section>
 
-        <div className="border-t border-zinc-800" />
+        <div className="border-t border-[#1A1A1A]" />
 
         {/* Usuń konto */}
         <section className="pb-8">
-          <h2 className="text-white font-semibold mb-2">Usuń konto</h2>
+          <h2 className="text-red-500 font-semibold mb-2 text-sm uppercase tracking-wide">Usuń konto</h2>
           <p className="text-zinc-500 text-sm mb-4">
             Spowoduje trwałe usunięcie konta i wszystkich danych. Operacja jest nieodwracalna.
           </p>
@@ -356,7 +364,7 @@ export default function SettingsPage() {
                 type="text"
                 value={deleteConfirm}
                 onChange={e => setDeleteConfirm(e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+                className={inputCls}
                 placeholder="USUŃ"
               />
             </div>
@@ -367,7 +375,7 @@ export default function SettingsPage() {
                 <button
                   onClick={deleteAccount}
                   disabled={deleteStatus === 'saving'}
-                  className="bg-red-600 text-white text-sm font-medium px-4 py-2 rounded hover:bg-red-500 transition-colors disabled:opacity-50"
+                  className="bg-red-600 text-white text-sm font-bold px-4 py-2.5 rounded-xl hover:bg-red-500 transition-colors disabled:opacity-50"
                 >
                   {deleteStatus === 'saving' ? 'Usuwam...' : 'Tak, usuń konto'}
                 </button>

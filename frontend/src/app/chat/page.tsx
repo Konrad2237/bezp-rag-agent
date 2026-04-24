@@ -375,7 +375,7 @@ export default function ChatPage() {
               className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
                 msg.role === 'user'
                   ? 'bg-[#2A2A2A] text-[#F2EEE8] rounded-br-sm whitespace-pre-wrap'
-                  : 'bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rounded-bl-sm prose prose-invert prose-sm max-w-none'
+                  : 'bg-[#00FF88] text-black rounded-bl-sm prose prose-sm max-w-none'
               }`}
             >
               {msg.role === 'user' ? (
@@ -384,15 +384,15 @@ export default function ChatPage() {
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                    ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
-                    li: ({ children }) => <li>{children}</li>,
-                    strong: ({ children }) => <strong className="text-[#00FF88] font-bold">{children}</strong>,
-                    h1: ({ children }) => <h1 className="text-base font-bold mb-1 text-white">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-base font-bold mb-1 text-white">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1 text-white">{children}</h3>,
-                    code: ({ children }) => <code className="bg-[#1A1A1A] px-1 rounded text-xs text-[#00FF88]">{children}</code>,
+                    p: ({ children }) => <p className="mb-2 last:mb-0 text-black">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1 text-black">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-black">{children}</ol>,
+                    li: ({ children }) => <li className="text-black">{children}</li>,
+                    strong: ({ children }) => <strong className="font-bold text-black">{children}</strong>,
+                    h1: ({ children }) => <h1 className="text-base font-bold mb-1 text-black">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-bold mb-1 text-black">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1 text-black">{children}</h3>,
+                    code: ({ children }) => <code className="bg-black/10 px-1 rounded text-xs text-black font-mono">{children}</code>,
                   }}
                 >
                   {msg.content}
