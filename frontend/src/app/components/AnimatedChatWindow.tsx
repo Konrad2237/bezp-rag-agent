@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 export type Msg = { from: 'user' | 'pitbul'; text: string }
 
@@ -20,6 +20,17 @@ export function AnimatedChatWindow({
   const [convoIndex, setConvoIndex] = useState(0)
   const [visibleCount, setVisibleCount] = useState(0)
   const [isTyping, setIsTyping] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isVisibleRef = useRef(false)
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => { isVisibleRef.current = entry.isIntersecting },
+      { threshold: 0.1 }
+    )
+    if (containerRef.current) observer.observe(containerRef.current)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -27,6 +38,11 @@ export function AnimatedChatWindow({
     async function run() {
       let c = 0
       while (!cancelled) {
+        if (!isVisibleRef.current) {
+          await sleep(300)
+          continue
+        }
+
         setConvoIndex(c)
         setVisibleCount(0)
         setIsTyping(false)
@@ -35,6 +51,7 @@ export function AnimatedChatWindow({
         const convo = conversations[c]
         for (let i = 0; i < convo.length; i++) {
           if (cancelled) return
+          if (!isVisibleRef.current) break
           if (convo[i].from === 'pitbul') {
             setIsTyping(true)
             await sleep(compact ? 1200 : 1500)
@@ -57,7 +74,7 @@ export function AnimatedChatWindow({
   const currentMessages = conversations[convoIndex] || []
 
   return (
-    <div className={`bg-[#111111] rounded-2xl border border-[#2A2A2A] overflow-hidden ${className}`}>
+    <div ref={containerRef} className={`bg-[#111111] rounded-2xl border border-[#2A2A2A] overflow-hidden ${className}`}>
       <div className={`flex items-center gap-2 border-b border-[#2A2A2A] ${compact ? 'px-3 py-2.5' : 'px-4 py-3'}`}>
         <div className={`rounded-full bg-[#00FF88] flex items-center justify-center font-bold text-black shrink-0 ${compact ? 'w-6 h-6 text-xs' : 'w-8 h-8 text-sm'}`}>
           P
