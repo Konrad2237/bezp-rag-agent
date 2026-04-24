@@ -105,6 +105,7 @@ export default function LandingPage() {
         </Link>
       </nav>
 
+      <main>
       {/* Hero */}
       <section className="px-5 py-12 md:py-20">
         <div className="max-w-5xl mx-auto flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
@@ -129,7 +130,7 @@ export default function LandingPage() {
               >
                 Zacznij za 19 zł →
               </Link>
-              <p className="text-zinc-600 text-xs self-center">
+              <p className="text-zinc-400 text-xs self-center">
                 Sprawdź przez tydzień. Bez zobowiązań.
               </p>
             </div>
@@ -285,7 +286,7 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
-          <p className="text-zinc-600 text-xs text-center mt-5">
+          <p className="text-zinc-400 text-xs text-center mt-5">
             69 zł miesięcznie. Tyle co Netflix i Spotify razem.
           </p>
         </div>
@@ -384,13 +385,15 @@ export default function LandingPage() {
           >
             Zacznij za 19 zł i sprawdź →
           </Link>
-          <p className="text-zinc-600 text-xs mt-4">Jeden tydzień. 19 zł. Zero ryzyka.</p>
+          <p className="text-zinc-400 text-xs mt-4">Jeden tydzień. 19 zł. Zero ryzyka.</p>
         </div>
       </section>
 
+      </main>
+
       {/* Footer */}
       <footer className="px-5 py-8 border-t border-[#1A1A1A] text-center pb-24 md:pb-8">
-        <p className="text-zinc-600 text-xs">
+        <p className="text-zinc-400 text-xs">
           BEZ PIERDOLENIA · AI Trener Personalny ·{' '}
           <Link href="/privacy" className="hover:text-zinc-400 transition-colors">
             Polityka prywatności
