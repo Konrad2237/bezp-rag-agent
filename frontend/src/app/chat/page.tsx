@@ -12,11 +12,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 const THINKING_PHRASES = [
   'Pitbul myśli...',
   'Pitbul wytęża szare komórki...',
-  'Słychać jak trybiki w głowie zgrzytają...',
-  'Pitbul myśli aż dym z uszu idzie...',
-  'Słychać tarcie opon w głowie...',
-  'Trwa heroiczna walka o jedną myśl...',
-  'Pali się sprzęgło w głowie...',
+  'Słychać jak trybiki zgrzytają...',
+  'Pitbul myśli aż dym z uszu...',
+  'Trwa heroiczna walka o myśl...',
   'Zwarcie intelektualne w toku...',
 ]
 
@@ -24,11 +22,43 @@ function randomPhrase() {
   return THINKING_PHRASES[Math.floor(Math.random() * THINKING_PHRASES.length)]
 }
 
-const CHAR_INTERVAL_MS = 18 // prędkość pisania — ms na znak
+const CHAR_INTERVAL_MS = 18
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+}
+
+function ThinkingIndicator({ phrase }: { phrase: string }) {
+  return (
+    <div className="flex justify-start">
+      <div className="bg-[#111111] border border-[#2A2A2A] rounded-2xl rounded-bl-sm px-4 py-3 flex flex-col gap-2.5">
+        <div className="flex items-center gap-1.5">
+          {[0, 150, 300].map(d => (
+            <span
+              key={d}
+              className="w-2 h-2 bg-[#00FF88] rounded-full animate-bounce"
+              style={{ animationDelay: `${d}ms` }}
+            />
+          ))}
+        </div>
+        <p className="text-[#00FF88] text-xs flex flex-wrap" style={{ gap: '1px' }}>
+          {phrase.split('').map((char, i) => (
+            <span
+              key={i}
+              style={{
+                display: 'inline-block',
+                animation: 'wave 1.2s ease-in-out infinite',
+                animationDelay: `${i * 0.045}s`,
+              }}
+            >
+              {char === ' ' ? ' ' : char}
+            </span>
+          ))}
+        </p>
+      </div>
+    </div>
+  )
 }
 
 export default function ChatPage() {
@@ -93,7 +123,6 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Cleanup na unmount — tylko czyści interval, NIE abortuje fetcha
   useEffect(() => {
     return () => {
       if (typingIntervalRef.current) {
@@ -102,7 +131,6 @@ export default function ChatPage() {
     }
   }, [])
 
-  // Przy zamknięciu strony — odpala Blachę jeśli zostały niespodsumowane wiadomości
   useEffect(() => {
     const handleBeforeUnload = () => {
       const token = localStorage.getItem('bezp_token')
@@ -133,8 +161,6 @@ export default function ChatPage() {
     setLoading(true)
 
     const controller = new AbortController()
-    // Timeout resetowany przy każdym odebranym chunk'u — nie strzelamy
-    // po stałym czasie, tylko gdy serwer milczy przez 150s z rzędu
     let timeoutId = setTimeout(() => controller.abort(), 150000)
 
     try {
@@ -165,7 +191,6 @@ export default function ChatPage() {
         const { done, value } = await reader.read()
         if (done) break
 
-        // Reset timeoutu przy każdym odebranym danych (keepalive lub token)
         clearTimeout(timeoutId)
         timeoutId = setTimeout(() => controller.abort(), 150000)
 
@@ -179,21 +204,16 @@ export default function ChatPage() {
             const data = JSON.parse(line.slice(6))
             if (data.error) throw new Error(data.error)
             if (data.token) {
-              // Pierwszy token — dopiero teraz pokazuj bąbelek i zacznij pisać
               if (!started) {
                 started = true
                 const fullContent = data.token
 
-                // Od razu zapisz PEŁNĄ odpowiedź do sessionStorage przez ref.
-                // Jeśli user wyjdzie podczas typing animation, wróci i zobaczy
-                // kompletną wiadomość zamiast urwanej.
                 const withFull = [
                   ...messagesRef.current,
                   { role: 'assistant' as const, content: fullContent },
                 ]
                 sessionStorage.setItem('bezp_chat_messages', JSON.stringify(withFull))
 
-                // React state — pusty content żeby typing animation działała
                 setMessages(prev => {
                   const next = [...prev, { role: 'assistant' as const, content: '' }]
                   typingTargetIndexRef.current = next.length - 1
@@ -222,12 +242,11 @@ export default function ChatPage() {
               }
             }
           } catch {
-            // niepełna linia — czekaj na więcej danych
+            // niepełna linia
           }
         }
       }
 
-      // Poczekaj aż kolejka się opróżni zanim wyczyścimy interval
       await new Promise<void>(resolve => {
         const wait = setInterval(() => {
           if (charQueueRef.current.length === 0) {
@@ -280,45 +299,52 @@ export default function ChatPage() {
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <p className="text-zinc-500">Sprawdzanie sesji...</p>
+      <div className="min-h-screen bg-[#0D0D0D] flex items-center justify-center">
+        <p className="text-zinc-500 text-sm">Sprawdzanie sesji...</p>
       </div>
     )
   }
 
   return (
-    <div className="h-[100dvh] bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-[#0D0D0D] flex flex-col overflow-hidden">
+
       {/* Header */}
-      <header className="border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-white font-bold leading-tight text-sm sm:text-base">BEZ PIERDOLENIA</h1>
-          <p className="text-zinc-500 text-xs">z Pitbulem</p>
+      <header className="border-b border-[#1A1A1A] px-4 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-[#00FF88] flex items-center justify-center font-bold text-black text-sm shrink-0">
+            P
+          </div>
+          <div>
+            <p className="text-white font-semibold text-sm leading-none mb-1">Pitbul</p>
+            <p className="text-[#00FF88] text-xs">● online 24/7</p>
+          </div>
         </div>
+
         <div className="flex items-center gap-3">
-          <nav className="flex gap-1 bg-zinc-900 rounded p-1">
-            <span className="px-3 py-1.5 text-sm rounded bg-white text-black font-medium">
+          <nav className="flex gap-1 bg-[#111111] border border-[#2A2A2A] rounded-lg p-1">
+            <span className="px-3 py-1.5 text-xs rounded-md bg-[#00FF88] text-black font-bold">
               Chat
             </span>
             {(loading || isTyping) ? (
-              <span className="px-3 py-1.5 text-sm rounded text-zinc-700 cursor-not-allowed">
+              <span className="px-3 py-1.5 text-xs rounded-md text-zinc-700 cursor-not-allowed">
                 Plan
               </span>
             ) : (
               <Link
                 href="/plan"
-                className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+                className="px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white transition-colors"
               >
                 Plan
               </Link>
             )}
             {(loading || isTyping) ? (
-              <span className="px-3 py-1.5 text-sm rounded text-zinc-700 cursor-not-allowed">
+              <span className="px-3 py-1.5 text-xs rounded-md text-zinc-700 cursor-not-allowed">
                 Ustawienia
               </span>
             ) : (
               <Link
                 href="/settings"
-                className="px-3 py-1.5 text-sm rounded text-zinc-400 hover:text-white transition-colors"
+                className="px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white transition-colors"
               >
                 Ustawienia
               </Link>
@@ -326,7 +352,7 @@ export default function ChatPage() {
           </nav>
           <button
             onClick={handleLogout}
-            className="text-zinc-400 hover:text-white text-xs sm:text-sm transition-colors"
+            className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
           >
             Wyloguj
           </button>
@@ -337,7 +363,7 @@ export default function ChatPage() {
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.length === 0 && (
           <p className="text-zinc-600 text-center text-sm mt-8">
-            Napisz do swojego AI trenera personalnego
+            Napisz do Pitbula — odpowie bez owijania w bawełnę.
           </p>
         )}
         {messages.map((msg, i) => (
@@ -346,10 +372,10 @@ export default function ChatPage() {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-3 text-sm ${
+              className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
                 msg.role === 'user'
-                  ? 'bg-white text-black whitespace-pre-wrap'
-                  : 'bg-zinc-800 text-zinc-100 prose prose-invert prose-sm max-w-none'
+                  ? 'bg-[#2A2A2A] text-[#F2EEE8] rounded-br-sm whitespace-pre-wrap'
+                  : 'bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rounded-bl-sm prose prose-invert prose-sm max-w-none'
               }`}
             >
               {msg.role === 'user' ? (
@@ -362,11 +388,11 @@ export default function ChatPage() {
                     ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
                     ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
                     li: ({ children }) => <li>{children}</li>,
-                    strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                    h1: ({ children }) => <h1 className="text-base font-bold mb-1">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-base font-bold mb-1">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
-                    code: ({ children }) => <code className="bg-zinc-700 px-1 rounded text-xs">{children}</code>,
+                    strong: ({ children }) => <strong className="text-[#00FF88] font-bold">{children}</strong>,
+                    h1: ({ children }) => <h1 className="text-base font-bold mb-1 text-white">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-bold mb-1 text-white">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1 text-white">{children}</h3>,
+                    code: ({ children }) => <code className="bg-[#1A1A1A] px-1 rounded text-xs text-[#00FF88]">{children}</code>,
                   }}
                 >
                   {msg.content}
@@ -375,19 +401,13 @@ export default function ChatPage() {
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-zinc-800 text-zinc-400 rounded-lg px-4 py-3 text-sm italic">
-              {thinkingPhrase}
-            </div>
-          </div>
-        )}
+        {loading && <ThinkingIndicator phrase={thinkingPhrase} />}
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="border-t border-zinc-800 px-4 py-4">
+      <div className="border-t border-[#1A1A1A] px-4 py-4 shrink-0">
         <div className="flex gap-3 max-w-3xl mx-auto">
           <input
             type="text"
@@ -395,13 +415,13 @@ export default function ChatPage() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Napisz wiadomość..."
-            disabled={loading}
-            className="flex-1 bg-zinc-900 border border-zinc-700 text-white rounded px-4 py-3 focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+            disabled={loading || isTyping}
+            className="flex-1 bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00FF88] disabled:opacity-40 transition-colors placeholder:text-zinc-600"
           />
           <button
             onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="bg-white text-black font-medium px-5 py-3 rounded hover:bg-zinc-200 disabled:opacity-50 transition-colors"
+            disabled={loading || isTyping || !input.trim()}
+            className="bg-[#00FF88] text-black font-bold px-5 py-3 rounded-xl text-sm hover:brightness-110 disabled:opacity-40 transition-all active:scale-[0.97]"
           >
             Wyślij
           </button>
