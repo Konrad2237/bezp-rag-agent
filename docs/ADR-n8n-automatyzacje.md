@@ -45,6 +45,7 @@ Projekt BEZ PIERDOLENIA to AI trener personalny oparty na RAG i agentach. Backen
 - Merge node "Combine by Position" nie działał gdy jeden dzień nie miał danych
 - Dwa emaile zamiast jednego — okazało się że workflow odpalam dwa razy ręcznie podczas testów, nie był to bug
 - Nagłówki kolumn "Dziś/Wczoraj" zmieniono na konkretne daty (`dd.LL.yyyy`) bo raport przychodzi rano i "dziś" było mylące
+- Raport pokazywał dane przesunięte o jeden dzień — w node HTTP Request "Yesterday Sessions" były dwa filtry `started_at` (ostatnie 48h i ostatnie 24h), przez co zakres był zawężony do przedziału 48h-24h zamiast 48h-24h względem początku dnia. Rozwiązanie: usunięcie duplikatu filtra.
 
 ---
 
