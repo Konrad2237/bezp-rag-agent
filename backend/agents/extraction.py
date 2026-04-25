@@ -58,9 +58,14 @@ Pitbul: {agent_response}"""
 
         try:
             result = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(f"[USZATEK] Błąd parsowania JSON: {e} — pomijam")
-            return
+        except json.JSONDecodeError:
+            # Haiku czasem dopisuje tekst po JSON — bierzemy tylko pierwszy obiekt
+            try:
+                decoder = json.JSONDecoder()
+                result, _ = decoder.raw_decode(raw)
+            except json.JSONDecodeError as e:
+                print(f"[USZATEK] Błąd parsowania JSON: {e} — pomijam")
+                return
 
         updates = {u["field"]: u["value"] for u in result.get("updates", []) if u.get("field") and u.get("value")}
         conflicts = result.get("conflicts", [])
