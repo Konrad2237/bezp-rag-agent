@@ -20,6 +20,11 @@ class QuizRequest(BaseModel):
     dostepny_sprzet: List[str]
     kontuzje: Optional[str] = None
     ograniczenia: Optional[str] = None
+    jakosc_snu: Optional[str] = None
+    aktywnosc_codzienna: Optional[str] = None
+    poziom_stresu: Optional[str] = None
+    dieta: Optional[str] = None
+    osiagniecia: Optional[str] = None
     notatki_quiz: Optional[str] = None
 
 
@@ -63,6 +68,11 @@ async def submit_quiz(
             "dostepny_sprzet": body.dostepny_sprzet,
             "kontuzje": body.kontuzje,
             "ograniczenia": body.ograniczenia,
+            "jakosc_snu": body.jakosc_snu,
+            "aktywnosc_codzienna": body.aktywnosc_codzienna,
+            "poziom_stresu": body.poziom_stresu,
+            "dieta": body.dieta,
+            "osiagniecia": body.osiagniecia,
             "notatki_quiz": body.notatki_quiz,
             "quiz_completed": True,
         }, on_conflict="user_id").execute()
