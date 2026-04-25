@@ -149,7 +149,7 @@ Wygeneruj plan JSON. Wszystkie potrzebne dane masz powyżej."""
 
 
 _szybcior_model = ChatAnthropic(
-    model="claude-haiku-4-5-20251001",
+    model="claude-sonnet-4-6",
     api_key=os.getenv("ANTHROPIC_API_KEY"),
     max_tokens=4096,
 )

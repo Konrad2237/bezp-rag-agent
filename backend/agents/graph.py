@@ -138,7 +138,7 @@ def _make_edit_tool(user_id: str):
                 f"Użyj DOKŁADNEJ nazwy z tej listy i spróbuj ponownie."
             )
 
-        update_res = _supabase.table("training_plans").update({"plan_data": plan}).eq("id", plan_id).execute()
+        update_res = _supabase.table("training_plans").update({"plan_data": plan}).eq("id", plan_id).select("id").execute()
         if not update_res.data:
             return f"BŁĄD: Zapis do bazy nie powiódł się. Spróbuj ponownie."
 
