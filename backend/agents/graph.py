@@ -298,7 +298,7 @@ def build_dynamic_context(profile: dict, summary: str, session_type: str, pendin
         ]
         for day in current_plan.get("days", []):
             exs = ", ".join(
-                f"{ex.get('name', '?')} {ex.get('sets', '?')}×{ex.get('reps', '?')}"
+                f"{ex.get('name', '?')} ({ex.get('sets', '?')}×{ex.get('reps', '?')})"
                 for ex in day.get("exercises", [])
             )
             plan_lines.append(f"  {day.get('day_label', '?')} ({', '.join(day.get('scheduled_days', []))}): {exs}")
