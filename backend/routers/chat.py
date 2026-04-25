@@ -111,7 +111,7 @@ async def chat(
         async def run_agent():
             nonlocal full_response, agent_exception
             try:
-                async for token in stream_agent(user_id, body.message):
+                async for token in stream_agent(user_id, body.message, user_profile=user_profile):
                     full_response += token
             except Exception as e:
                 agent_exception = e

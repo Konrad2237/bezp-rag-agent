@@ -18,33 +18,24 @@ from services.memory import (
 from config import supabase_admin
 
 
-SZYBCIOR_STATIC_PROMPT = """Jesteś Szybcior — wyspecjalizowany agent generowania planów treningowych w systemie "Bez Pierdolenia".
+SZYBCIOR_STATIC_PROMPT = """Jesteś Szybcior — agent generowania planów treningowych w systemie Bez Pierdolenia.
 
-════════════════════════════════════════
 TWÓJ PROCES
-════════════════════════════════════════
+1. Wywołaj search_knowledge — znajdź odpowiednie ćwiczenia dla profilu usera
+2. Opcjonalnie search_web gdy baza wiedzy niewystarczająca
+3. Wygeneruj plan JSON jako ostatnią odpowiedź — wyłącznie JSON, bez tekstu przed ani po
 
-1. Wywołaj get_plan_history — sprawdź poprzednie plany żeby nie powtarzać ćwiczeń
-2. Wywołaj search_knowledge — znajdź odpowiednie ćwiczenia w bazie wiedzy
-3. Jeśli baza wiedzy niewystarczająca — wywołaj search_web
-4. Na podstawie zebranych danych wygeneruj plan JSON jako OSTATNIĄ odpowiedź (bez tekstu przed ani po)
-
-════════════════════════════════════════
 ZASADY TWORZENIA PLANU
-════════════════════════════════════════
+- Liczba dni = profile.dni_treningowe
+- Czas 30-45 min → max 5-6 ćwiczeń; 60-90 min → 7-9 ćwiczeń
+- Uwzględnij dostępny sprzęt i miejsce treningu
+- Kontuzje → bezpieczne alternatywy
+- Poziom początkujący → FBW zamiast split
+- Wzorce: push, pull, nogi, core
+- Serie/powtórzenia wg celu: masa 3-4×8-12 | siła 4-5×4-6 | redukcja 3-4×12-15
+- Historia planów jest w kontekście — nie powtarzaj tych samych ćwiczeń
 
-1. Dopasuj liczbę dni do profilu (dni_treningowe)
-2. Czas 30-45 min → max 5-6 ćwiczeń; 60-90 min → 7-9 ćwiczeń
-3. Uwzględnij dostępny sprzęt i miejsce treningu
-4. Uwzględnij kontuzje — bezpieczne alternatywy
-5. Dla początkujących: FBW > split
-6. Wzorce ruchowe: push, pull, nogi, core
-7. Serie × powtórzenia wg celu: masa 3-4×8-12 | siła 4-5×4-6 | redukcja 3-4×12-15
-8. NIE powtarzaj ćwiczeń z poprzednich planów — sprawdź historię
-
-════════════════════════════════════════
-FORMAT KOŃCOWEJ ODPOWIEDZI — WYŁĄCZNIE JSON
-════════════════════════════════════════
+FORMAT KOŃCOWEJ ODPOWIEDZI — WYŁĄCZNIE JSON:
 
 {{
   "plan_name": "FBW 3x tydzień — Masa",
@@ -91,27 +82,30 @@ def check_missing_fields(profile: dict) -> list[str]:
 
 
 def _szybcior_setup(state: SzybciorState) -> SzybciorState:
-    """Buduje initial messages. System prompt cachowany, dynamic data w HumanMessage."""
+    """Buduje initial messages. Historia planów wstrzykniętą — bez tool call roundtrip."""
     user_id = state["user_id"]
-    print(f"\n[SZYBCIOR] setup dla user: {user_id[:8]}...")
+    print(f"\n[SZYBCIOR] setup: {user_id[:8]}...")
 
     profile = get_user_profile(user_id)
     summary = get_memory_summary(user_id)
+    plan_history = _fetch_plan_history(user_id)
 
     SKIP = {"id", "user_id", "created_at", "updated_at"}
-    profile_lines = [f"- {k}: {v}" for k, v in profile.items() if v and k not in SKIP]
-    profile_str = "\n".join(profile_lines) if profile_lines else "Brak danych profilu."
+    profile_lines = [f"  {k}: {v}" for k, v in profile.items() if v and k not in SKIP]
+    profile_str = "\n".join(profile_lines) if profile_lines else "Brak danych."
 
-    dynamic_context = f"""PROFIL UŻYTKOWNIKA:
+    dynamic_context = f"""PROFIL:
 {profile_str}
 
-KONTEKST Z ROZMÓW:
-{summary or "Brak historii rozmów."}
+KONTEKST ROZMÓW:
+{summary or "Brak."}
 
-POWÓD GENEROWANIA:
-{state["generation_reason"]}
+HISTORIA PLANÓW (nie powtarzaj tych ćwiczeń):
+{plan_history}
 
-Wygeneruj plan treningowy. Zacznij od sprawdzenia historii planów."""
+POWÓD: {state["generation_reason"]}
+
+Wygeneruj plan treningowy. Użyj search_knowledge żeby znaleźć odpowiednie ćwiczenia."""
 
     messages = [
         SystemMessage(content=[{
@@ -127,27 +121,21 @@ Wygeneruj plan treningowy. Zacznij od sprawdzenia historii planów."""
 def _make_szybcior_tools(user_id: str):
     @tool
     def search_knowledge(query: str) -> str:
-        """Przeszukuje bazę wiedzy treningowej z ebooka. Używaj do znajdowania ćwiczeń i zasad."""
+        """Przeszukuje bazę wiedzy treningowej. Używaj do znajdowania ćwiczeń i zasad dla profilu usera."""
         print(f"[SZYBCIOR] search_knowledge: '{query}'")
         return rag_search(query)
 
     @tool
     def search_web(query: str) -> str:
-        """Przeszukuje internet gdy baza wiedzy nie ma wystarczających informacji."""
+        """Przeszukuje internet — tylko gdy baza wiedzy nie ma wystarczających informacji."""
         print(f"[SZYBCIOR] search_web: '{query}'")
         return web_search(query)
 
-    @tool
-    def get_plan_history(reason: str = "") -> str:
-        """Pobiera historię poprzednich planów treningowych — żeby nie powtarzać ćwiczeń."""
-        print(f"[SZYBCIOR] get_plan_history")
-        return _fetch_plan_history(user_id)
-
-    return [search_knowledge, search_web, get_plan_history]
+    return [search_knowledge, search_web]
 
 
 _szybcior_model = ChatAnthropic(
-    model="claude-sonnet-4-20250514",
+    model="claude-sonnet-4-6",
     api_key=os.getenv("ANTHROPIC_API_KEY"),
     max_tokens=2048,
 )

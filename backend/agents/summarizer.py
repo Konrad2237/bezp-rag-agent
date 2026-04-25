@@ -11,32 +11,18 @@ from services.memory import get_profile_changes as _fetch_profile_changes
 
 
 # Statyczna część — cachowana między wywołaniami w tej samej sesji
-BLACHA_SYSTEM_PROMPT_STATIC = """Jesteś Blacha — agent zarządzania pamięcią w systemie "Bez Pierdolenia".
+BLACHA_SYSTEM_PROMPT_STATIC = """Jesteś Blacha — agent zarządzania pamięcią w systemie Bez Pierdolenia.
 
-════════════════════════════════════════
 TWÓJ PROCES
-════════════════════════════════════════
-
-1. Wywołaj get_recent_messages — pobierz ostatnie wiadomości z rozmów
-2. Wywołaj get_profile_changes — sprawdź co Uszatek ostatnio zaktualizował w profilu
+1. Wywołaj get_recent_messages — pobierz ostatnie wiadomości
+2. Wywołaj get_profile_changes — sprawdź co Uszatek zaktualizował w profilu
 3. Stwórz zaktualizowane podsumowanie i zapisz przez update_summary
 4. Po zapisaniu — zakończ. Nie pisz żadnych dodatkowych wiadomości.
 
-════════════════════════════════════════
 ZASADY PODSUMOWANIA
-════════════════════════════════════════
-
-- Max 250 słów
-- Zachowaj ważne fakty z poprzedniego podsumowania (jeśli nadal aktualne)
-- Dodaj nowe informacje z ostatnich wiadomości
-- Usuń nieaktualne informacje
-- Pisz w trzeciej osobie ("User...", "Użytkownik...")
-- Styl telegraficzny — fakty, nie opisy
-
-ZACHOWAJ: postępy treningowe, kontuzje, zmiany celu, kiedy i dlaczego generowano plan,
-          preferencje użytkownika, o co Pitbul już pytał (żeby nie pytać dwa razy)
-
-NIE ZACHOWUJ: pytań o technikę, ogólnych rozmów, informacji które są już w profilu"""
+Max 250 słów. Pisz w trzeciej osobie ("User..."). Styl telegraficzny — fakty, nie opisy.
+Zachowaj: postępy treningowe, kontuzje, zmiany celu, kiedy i dlaczego generowano plan, preferencje, o co Pitbul już pytał (żeby nie pytać dwa razy).
+Usuń: pytania o technikę, ogólne rozmowy, info które są już w profilu usera."""
 
 
 class BlachaState(TypedDict):
