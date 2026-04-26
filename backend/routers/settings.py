@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
+import httpx
 from config import supabase_admin, SUPABASE_URL, SUPABASE_ANON_KEY
 from middleware import get_current_user
-from supabase import create_client
 
 router = APIRouter()
 
@@ -28,15 +28,35 @@ _DIETA_VALUES = {"nie_pilnuje", "staram_sie", "pilnuje", "specjalna"}
 
 
 def _verify_password(user_id: str, password: str) -> bool:
-    """Weryfikuje hasło przez próbę logowania klientem anonimowym."""
+    """Weryfikuje hasło przez bezpośrednie wywołanie Supabase Auth REST API."""
     try:
         auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
         email = auth_user.user.email
-        temp = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        temp.auth.sign_in_with_password({"email": email, "password": password})
-        return True
+        res = httpx.post(
+            f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+            json={"email": email, "password": password},
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            timeout=10.0,
+        )
+        return res.status_code == 200
     except Exception:
         return False
+
+
+def _translate_supabase_error(msg: str) -> str:
+    """Tłumaczy angielskie błędy Supabase na polski."""
+    m = msg.lower()
+    if "already in use" in m or "already registered" in m or "duplicate" in m:
+        return "Ten adres email jest już zajęty przez inne konto"
+    if "invalid email" in m or "unable to validate email" in m:
+        return "Nieprawidłowy format adresu email"
+    if "weak password" in m or "password should be" in m:
+        return "Hasło jest zbyt słabe — użyj min. 8 znaków"
+    if "rate limit" in m or "too many" in m:
+        return "Zbyt wiele prób — odczekaj chwilę i spróbuj ponownie"
+    if "user not found" in m:
+        return "Nie znaleziono użytkownika"
+    return "Wystąpił błąd — spróbuj ponownie"
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -173,7 +193,9 @@ async def update_profile(body: ProfileUpdateRequest, user_id: str = Depends(get_
     if not update_data:
         raise HTTPException(400, "Podaj co najmniej jedno pole do zmiany")
 
-    supabase_admin.table("user_profiles").update(update_data).eq("user_id", user_id).execute()
+    result = supabase_admin.table("user_profiles").update(update_data).eq("user_id", user_id).select("user_id").execute()
+    if not result.data:
+        raise HTTPException(500, "Nie udało się zaktualizować profilu — spróbuj ponownie")
     return {"message": "Profil zaktualizowany"}
 
 
@@ -181,24 +203,43 @@ async def update_profile(body: ProfileUpdateRequest, user_id: str = Depends(get_
 async def update_email(body: EmailUpdateRequest, user_id: str = Depends(get_current_user)):
     if not _verify_password(user_id, body.current_password):
         raise HTTPException(401, "Nieprawidłowe hasło")
+
+    # Sprawdź czy nowy email różni się od aktualnego
+    try:
+        auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
+        if auth_user.user.email == body.email:
+            raise HTTPException(400, "Podany adres email jest już przypisany do Twojego konta")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
     try:
         supabase_admin.auth.admin.update_user_by_id(user_id, {"email": body.email})
-        return {"message": "Email zaktualizowany. Sprawdź skrzynkę — wyślemy link potwierdzający."}
+        return {
+            "message": (
+                "Email zmieniony. Od teraz logujesz się nowym adresem. "
+                "Twoje dane (historia, plan, profil) zostają bez zmian — "
+                "są przypisane do Twojego konta, nie do adresu email."
+            )
+        }
     except Exception as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, _translate_supabase_error(str(e)))
 
 
 @router.patch("/password")
 async def update_password(body: PasswordUpdateRequest, user_id: str = Depends(get_current_user)):
     if len(body.new_password) < 8:
         raise HTTPException(400, "Nowe hasło musi mieć co najmniej 8 znaków")
+    if body.old_password == body.new_password:
+        raise HTTPException(400, "Nowe hasło musi być inne niż obecne")
     if not _verify_password(user_id, body.old_password):
         raise HTTPException(401, "Nieprawidłowe obecne hasło")
     try:
         supabase_admin.auth.admin.update_user_by_id(user_id, {"password": body.new_password})
         return {"message": "Hasło zmienione"}
     except Exception as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, _translate_supabase_error(str(e)))
 
 
 @router.delete("/account")
