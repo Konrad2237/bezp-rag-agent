@@ -1,16 +1,21 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 const inputCls = 'w-full bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#00FF88] transition-colors placeholder:text-zinc-600'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const searchParams = useSearchParams()
+
+  const planParam = searchParams.get('plan') ?? ''
+  const modeParam = searchParams.get('mode') === 'register' ? 'register' : 'login'
+
+  const [mode, setMode] = useState<'login' | 'register'>(modeParam)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -20,6 +25,11 @@ export default function LoginPage() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [gdprConsent, setGdprConsent] = useState(false)
+
+  // Gdy URL zmieni się (np. user cofa z /login?mode=register na /login), sync state
+  useEffect(() => {
+    setMode(modeParam)
+  }, [modeParam])
 
   function reset() {
     setError('')
@@ -32,6 +42,14 @@ export default function LoginPage() {
   function switchMode(next: 'login' | 'register') {
     reset()
     setMode(next)
+  }
+
+  function routeAfterLogin(subscriptionStatus: string | null, hasProfile: boolean) {
+    if (subscriptionStatus === 'active') {
+      router.push(hasProfile ? '/chat' : '/quiz')
+    } else {
+      router.push('/pricing')
+    }
   }
 
   async function handleLogin() {
@@ -69,8 +87,7 @@ export default function LoginPage() {
         headers: { Authorization: `Bearer ${data.access_token}` },
       })
       const meData = await meRes.json()
-
-      router.push(meData.has_profile ? '/chat' : '/quiz')
+      routeAfterLogin(meData.subscription_status, meData.has_profile)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd logowania')
     } finally {
@@ -101,6 +118,7 @@ export default function LoginPage() {
 
     setLoading(true)
     try {
+      // 1. Zarejestruj konto
       const res = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -113,10 +131,41 @@ export default function LoginPage() {
           : data.detail
         throw new Error(detail || 'Błąd rejestracji')
       }
-      setError('')
-      setPassword('')
-      setPasswordConfirm('')
-      setMessage(data.message || 'Zarejestrowano! Sprawdź skrzynkę i potwierdź email przed logowaniem.')
+
+      // 2. Auto-login po rejestracji
+      const loginRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!loginRes.ok) {
+        // Confirm email jest włączony — user musi kliknąć link
+        setMessage(data.message || 'Konto założone! Sprawdź skrzynkę i potwierdź email przed logowaniem.')
+        return
+      }
+      const loginData = await loginRes.json()
+      localStorage.setItem('bezp_token', loginData.access_token)
+      if (loginData.refresh_token) localStorage.setItem('bezp_refresh_token', loginData.refresh_token)
+
+      // 3. Jeśli user wybrał plan — przekieruj do Stripe Checkout
+      if (planParam) {
+        const checkoutRes = await fetch(`${API_URL}/payments/create-checkout-session`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${loginData.access_token}`,
+          },
+          body: JSON.stringify({ plan: planParam }),
+        })
+        if (checkoutRes.ok) {
+          const checkoutData = await checkoutRes.json()
+          window.location.href = checkoutData.checkout_url
+          return
+        }
+      }
+
+      // 4. Brak planu w URL — idź do /pricing
+      router.push('/pricing')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd rejestracji')
     } finally {
@@ -138,6 +187,18 @@ export default function LoginPage() {
           <h1 className="text-xl font-bold text-white">PITBUL</h1>
           <p className="text-[#00FF88] text-xs mt-1">Twój trener AI</p>
         </div>
+
+        {/* Info o planie jeśli user przyszedł z /pricing */}
+        {planParam && mode === 'register' && (
+          <div className="mb-4 px-4 py-3 bg-[#0a1a12] border border-[#00FF88]/30 rounded-xl text-sm text-zinc-300 text-center">
+            Zakładasz konto, żeby aktywować plan{' '}
+            <span className="text-[#00FF88] font-semibold">
+              {planParam === 'week' ? 'Tygodniowy' : planParam === 'month' ? 'Miesięczny' : 'Kwartalny'}
+            </span>.
+            <br />
+            Po rejestracji przejdziesz do płatności.
+          </div>
+        )}
 
         {/* Przełącznik trybu */}
         <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">
@@ -209,7 +270,9 @@ export default function LoginPage() {
             className="w-full bg-[#00FF88] text-black font-bold py-3.5 rounded-xl hover:brightness-110 disabled:opacity-50 transition-all active:scale-[0.97]"
             style={{ boxShadow: '0 0 20px rgba(0,255,136,0.2)' }}
           >
-            {loading ? '...' : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
+            {loading
+              ? (mode === 'register' && planParam ? 'Zakładam konto i przechodzę do płatności...' : '...')
+              : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
           </button>
         </div>
 
@@ -218,5 +281,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }

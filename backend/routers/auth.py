@@ -100,7 +100,9 @@ async def refresh(body: RefreshRequest):
 
 @router.get("/me")
 async def me(user_id: str = Depends(get_current_user)):
-    """Sprawdza czy zalogowany user ma wypełniony profil."""
-    response = supabase.table("user_profiles").select("quiz_completed").eq("user_id", user_id).execute()
-    has_profile = len(response.data) > 0 and response.data[0].get("quiz_completed") is True
-    return {"user_id": user_id, "has_profile": has_profile}
+    """Sprawdza profil i status subskrypcji zalogowanego usera."""
+    response = supabase.table("user_profiles").select("quiz_completed, subscription_status").eq("user_id", user_id).execute()
+    row = response.data[0] if response.data else {}
+    has_profile = row.get("quiz_completed") is True
+    subscription_status = row.get("subscription_status")
+    return {"user_id": user_id, "has_profile": has_profile, "subscription_status": subscription_status}

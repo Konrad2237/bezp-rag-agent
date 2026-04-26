@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from middleware import get_current_user
+from middleware import get_current_user, require_active_subscription
 from agents.graph import stream_agent
 from agents.extraction import run_extraction_agent
 from agents.summarizer import run_summarizer_agent
@@ -94,7 +94,7 @@ def check_rate_limit(user_id: str):
 @router.post("/")
 async def chat(
     body: ChatRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_active_subscription)
 ):
     if not body.message.strip():
         raise HTTPException(status_code=400, detail="Wiadomość nie może być pusta")

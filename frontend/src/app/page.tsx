@@ -75,9 +75,9 @@ const COMPARISON_ROWS = [
 ]
 
 const PLANS = [
-  { name: 'Tydzień', price: 19, period: 'zł', desc: 'Sprawdź bez zobowiązań.', highlight: false, note: null },
-  { name: 'Miesiąc', price: 69, period: 'zł/mies.', desc: 'Taniej niż 4 tygodnie osobno. Pełny dostęp.', highlight: true, note: null },
-  { name: '3 miesiące', price: 189, period: 'zł', desc: 'Dla tych co wiedzą że zostają.', highlight: false, note: '63 zł/mies.' },
+  { id: 'week', name: 'Tydzień', price: 19, period: 'zł', desc: 'Sprawdź bez zobowiązań.', highlight: false, note: null },
+  { id: 'month', name: 'Miesiąc', price: 69, period: 'zł/mies.', desc: 'Taniej niż 4 tygodnie osobno. Pełny dostęp.', highlight: true, note: null },
+  { id: 'quarter', name: '3 miesiące', price: 189, period: 'zł', desc: 'Dla tych co wiedzą że zostają.', highlight: false, note: '63 zł/mies.' },
 ]
 
 // ─── LandingPage ──────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ export default function LandingPage() {
       {/* Sticky CTA — mobile only */}
       <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#0D0D0D]/95 backdrop-blur-sm border-t border-[#1A1A1A] p-3">
         <Link
-          href="/login"
+          href="/pricing"
           className="block w-full bg-[#00FF88] text-black font-bold text-center py-3.5 rounded-xl text-sm transition-all duration-150 active:scale-[0.97]"
           style={{ boxShadow: '0 0 20px rgba(0,255,136,0.3)' }}
         >
@@ -334,7 +334,7 @@ export default function LandingPage() {
                 )}
                 <p className="text-zinc-500 text-xs mb-5 flex-1">{plan.desc}</p>
                 <Link
-                  href="/login"
+                  href={`/login?plan=${plan.id}&mode=register`}
                   className="block text-center py-3 rounded-xl text-sm font-bold transition-all duration-150 active:scale-[0.97]"
                   style={{
                     background: plan.highlight ? '#00FF88' : '#1A1A1A',
@@ -379,7 +379,7 @@ export default function LandingPage() {
             Albo w końcu mieć plan, który daje efekty.
           </p>
           <Link
-            href="/login"
+            href="/pricing"
             className="inline-block bg-[#00FF88] text-black font-bold px-10 py-4 rounded-xl text-base transition-all duration-150 hover:scale-105 active:scale-[0.97] hover:shadow-[0_0_50px_rgba(0,255,136,0.5)]"
             style={{ boxShadow: '0 0 35px rgba(0,255,136,0.3)' }}
           >

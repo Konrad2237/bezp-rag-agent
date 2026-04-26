@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-from middleware import get_current_user
+from middleware import get_current_user, require_active_subscription
 from config import supabase, supabase_admin
 
 router = APIRouter()
@@ -31,7 +31,7 @@ class QuizRequest(BaseModel):
 @router.post("/submit")
 async def submit_quiz(
     body: QuizRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(require_active_subscription)
 ):
     """Zapisuje wyniki quizu do user_profiles."""
 
