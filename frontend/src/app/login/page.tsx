@@ -186,7 +186,7 @@ function LoginForm() {
           </div>
         )}
 
-        {/* Przełącznik trybu */}
+        {/* Przełącznik trybu — zakładka Rejestracja tylko po opłaceniu */}
         <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">
           <button
             onClick={() => switchMode('login')}
@@ -196,18 +196,20 @@ function LoginForm() {
           >
             Logowanie
           </button>
-          <button
-            onClick={() => switchMode('register')}
-            className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
-              mode === 'register' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            Rejestracja
-          </button>
+          {paidParam && (
+            <button
+              onClick={() => switchMode('register')}
+              className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
+                mode === 'register' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Rejestracja
+            </button>
+          )}
         </div>
 
         <div className="space-y-3">
-          {mode === 'register' && (
+          {paidParam && mode === 'register' && (
             <>
               <input type="text" placeholder="Imię" value={imie} onChange={e => setImie(e.target.value)} className={inputCls} />
               <input type="text" placeholder="Nazwisko" value={nazwisko} onChange={e => setNazwisko(e.target.value)} className={inputCls} />
@@ -224,7 +226,7 @@ function LoginForm() {
             className={inputCls}
           />
 
-          {mode === 'register' && (
+          {paidParam && mode === 'register' && (
             <>
               <input type="password" placeholder="Powtórz hasło" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} className={inputCls} />
               <label className="flex items-start gap-3 cursor-pointer" onClick={() => setGdprConsent(v => !v)}>
@@ -251,16 +253,24 @@ function LoginForm() {
           {message && <p className="text-[#00FF88] text-sm">{message}</p>}
 
           <button
-            onClick={mode === 'login' ? handleLogin : handleRegister}
+            onClick={paidParam && mode === 'register' ? handleRegister : handleLogin}
             disabled={loading}
             className="w-full bg-[#00FF88] text-black font-bold py-3.5 rounded-xl hover:brightness-110 disabled:opacity-50 transition-all active:scale-[0.97]"
             style={{ boxShadow: '0 0 20px rgba(0,255,136,0.2)' }}
           >
-            {loading ? '...' : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
+            {loading ? '...' : paidParam && mode === 'register' ? 'Zarejestruj się' : 'Zaloguj się'}
           </button>
         </div>
 
-        <p className="text-zinc-600 text-xs text-center mt-6">
+        {!paidParam && (
+          <p className="text-zinc-500 text-xs text-center mt-4">
+            Nie masz konta?{' '}
+            <Link href="/pricing" className="text-[#00FF88] hover:brightness-110 transition-colors">
+              Wybierz plan →
+            </Link>
+          </p>
+        )}
+        <p className="text-zinc-600 text-xs text-center mt-3">
           <Link href="/" className="hover:text-zinc-400 transition-colors">← Wróć na stronę główną</Link>
         </p>
       </div>
