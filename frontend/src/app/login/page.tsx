@@ -132,39 +132,18 @@ function LoginForm() {
         throw new Error(detail || 'Błąd rejestracji')
       }
 
-      // 2. Auto-login po rejestracji
+      // 2. Cichy auto-login — zapisz token żeby /pricing mogło od razu iść do Stripe
       const loginRes = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
-      if (!loginRes.ok) {
-        // Confirm email jest włączony — user musi kliknąć link
-        setMessage(data.message || 'Konto założone! Sprawdź skrzynkę i potwierdź email przed logowaniem.')
-        return
+      if (loginRes.ok) {
+        const loginData = await loginRes.json()
+        localStorage.setItem('bezp_token', loginData.access_token)
+        if (loginData.refresh_token) localStorage.setItem('bezp_refresh_token', loginData.refresh_token)
       }
-      const loginData = await loginRes.json()
-      localStorage.setItem('bezp_token', loginData.access_token)
-      if (loginData.refresh_token) localStorage.setItem('bezp_refresh_token', loginData.refresh_token)
-
-      // 3. Jeśli user wybrał plan — przekieruj do Stripe Checkout
-      if (planParam) {
-        const checkoutRes = await fetch(`${API_URL}/payments/create-checkout-session`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${loginData.access_token}`,
-          },
-          body: JSON.stringify({ plan: planParam }),
-        })
-        if (checkoutRes.ok) {
-          const checkoutData = await checkoutRes.json()
-          window.location.href = checkoutData.checkout_url
-          return
-        }
-      }
-
-      // 4. Brak planu w URL — idź do /pricing
+      // Niezależnie czy auto-login się udał — zawsze idź do /pricing
       router.push('/pricing')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd rejestracji')
@@ -187,18 +166,6 @@ function LoginForm() {
           <h1 className="text-xl font-bold text-white">PITBUL</h1>
           <p className="text-[#00FF88] text-xs mt-1">Twój trener AI</p>
         </div>
-
-        {/* Info o planie jeśli user przyszedł z /pricing */}
-        {planParam && mode === 'register' && (
-          <div className="mb-4 px-4 py-3 bg-[#0a1a12] border border-[#00FF88]/30 rounded-xl text-sm text-zinc-300 text-center">
-            Zakładasz konto, żeby aktywować plan{' '}
-            <span className="text-[#00FF88] font-semibold">
-              {planParam === 'week' ? 'Tygodniowy' : planParam === 'month' ? 'Miesięczny' : 'Kwartalny'}
-            </span>.
-            <br />
-            Po rejestracji przejdziesz do płatności.
-          </div>
-        )}
 
         {/* Przełącznik trybu */}
         <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">
@@ -270,9 +237,7 @@ function LoginForm() {
             className="w-full bg-[#00FF88] text-black font-bold py-3.5 rounded-xl hover:brightness-110 disabled:opacity-50 transition-all active:scale-[0.97]"
             style={{ boxShadow: '0 0 20px rgba(0,255,136,0.2)' }}
           >
-            {loading
-              ? (mode === 'register' && planParam ? 'Zakładam konto i przechodzę do płatności...' : '...')
-              : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
+            {loading ? '...' : mode === 'login' ? 'Zaloguj się' : 'Zarejestruj się'}
           </button>
         </div>
 
