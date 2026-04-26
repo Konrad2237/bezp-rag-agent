@@ -205,7 +205,7 @@ def _szybcior_finalize(state: SzybciorState) -> SzybciorState:
         save_res = supabase_admin.table("training_plans").update({
             "plan_data": plan_data,
             "generation_reason": generation_reason,
-        }).eq("user_id", user_id).execute()
+        }).eq("user_id", user_id).select("id").execute()
     else:
         save_res = supabase_admin.table("training_plans").insert({
             "user_id": user_id,
