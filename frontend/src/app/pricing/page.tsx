@@ -1,7 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 const plans = [
   {
@@ -33,9 +36,40 @@ const plans = [
 
 export default function PricingPage() {
   const router = useRouter()
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
 
-  function choosePlan(planId: string) {
-    router.push(`/login?plan=${planId}&mode=register`)
+  async function choosePlan(planId: string) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('bezp_token') : null
+
+    if (!token) {
+      // Niezalogowany → rejestracja z wybranym planem
+      router.push(`/login?plan=${planId}&mode=register`)
+      return
+    }
+
+    // Zalogowany → od razu Stripe Checkout
+    setLoadingPlan(planId)
+    try {
+      const res = await fetch(`${API_URL}/payments/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan: planId }),
+      })
+      if (!res.ok) {
+        // Token mógł wygasnąć
+        router.push(`/login?plan=${planId}&mode=register`)
+        return
+      }
+      const data = await res.json()
+      window.location.href = data.checkout_url
+    } catch {
+      router.push(`/login?plan=${planId}&mode=register`)
+    } finally {
+      setLoadingPlan(null)
+    }
   }
 
   return (
@@ -75,14 +109,15 @@ export default function PricingPage() {
             <p className="text-zinc-500 text-xs mb-6 leading-snug">{plan.desc}</p>
             <button
               onClick={() => choosePlan(plan.id)}
-              className={`mt-auto w-full py-3 rounded-xl font-bold text-sm transition-all active:scale-[0.97] ${
+              disabled={loadingPlan !== null}
+              className={`mt-auto w-full py-3 rounded-xl font-bold text-sm transition-all active:scale-[0.97] disabled:opacity-60 ${
                 plan.highlight
                   ? 'bg-[#00FF88] text-black hover:brightness-110'
                   : 'bg-[#1A1A1A] text-white border border-[#2A2A2A] hover:border-[#00FF88] hover:text-[#00FF88]'
               }`}
               style={plan.highlight ? { boxShadow: '0 0 20px rgba(0,255,136,0.2)' } : {}}
             >
-              Wybierz
+              {loadingPlan === plan.id ? '...' : 'Wybierz'}
             </button>
           </div>
         ))}
