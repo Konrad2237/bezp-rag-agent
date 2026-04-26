@@ -461,9 +461,9 @@ export default function SettingsPage() {
       <header className="border-b border-[#1A1A1A] px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-full bg-[#00FF88] flex items-center justify-center font-bold text-black text-sm shrink-0">P</div>
-          <div>
+          <div className="shrink-0">
             <p className="text-white font-semibold text-sm leading-none mb-1">Pitbul</p>
-            <p className="text-[#00FF88] text-xs">● online 24/7</p>
+            <p className="text-[#00FF88] text-xs whitespace-nowrap">● online 24/7</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

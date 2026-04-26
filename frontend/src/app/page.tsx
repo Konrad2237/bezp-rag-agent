@@ -186,7 +186,7 @@ export default function LandingPage() {
               },
               {
                 n: '02',
-                title: 'Odpowiadasz na 7 pytań',
+                title: 'Odpowiadasz na kilkanaście pytań',
                 desc: 'Cel, waga, staż, sprzęt, kontuzje. Pitbul od razu wie o Tobie wszystko.',
               },
               {
