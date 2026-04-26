@@ -63,8 +63,18 @@ async def login(body: LoginRequest):
             "refresh_token": response.session.refresh_token,
             "user_id": response.user.id
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        msg = str(e).lower()
+        if "email not confirmed" in msg:
+            raise HTTPException(
+                status_code=401,
+                detail="Email nie został potwierdzony — sprawdź skrzynkę i kliknij link aktywacyjny",
+            )
+        if "invalid login credentials" in msg or "invalid email or password" in msg:
+            raise HTTPException(status_code=401, detail="Błędny email lub hasło")
+        raise HTTPException(status_code=401, detail="Błąd logowania — spróbuj ponownie")
 
 
 class RefreshRequest(BaseModel):
