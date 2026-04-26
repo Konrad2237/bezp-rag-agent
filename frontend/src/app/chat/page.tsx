@@ -350,12 +350,6 @@ export default function ChatPage() {
               </Link>
             )}
           </nav>
-          <button
-            onClick={handleLogout}
-            className="hidden sm:inline text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
-          >
-            Wyloguj
-          </button>
         </div>
       </header>
 
