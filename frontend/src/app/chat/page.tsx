@@ -99,6 +99,10 @@ export default function ChatPage() {
           return
         }
         const data = await res.json()
+        if (data.subscription_status !== 'active') {
+          router.replace('/pricing')
+          return
+        }
         if (!data.has_profile) {
           router.replace('/quiz')
           return

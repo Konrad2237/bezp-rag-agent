@@ -124,7 +124,21 @@ export default function QuizPage() {
   })
 
   useEffect(() => {
-    getValidToken().then(t => { if (!t) router.push('/') })
+    async function checkAuth() {
+      const token = await getValidToken()
+      if (!token) { router.replace('/'); return }
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) { router.replace('/'); return }
+        const data = await res.json()
+        if (data.subscription_status !== 'active') { router.replace('/pricing'); return }
+      } catch {
+        router.replace('/')
+      }
+    }
+    checkAuth()
   }, [router])
 
   const stepList = getStepList(form.cel)
