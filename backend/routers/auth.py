@@ -100,9 +100,32 @@ async def refresh(body: RefreshRequest):
 
 @router.get("/me")
 async def me(user_id: str = Depends(get_current_user)):
-    """Sprawdza profil i status subskrypcji zalogowanego usera."""
+    """Sprawdza profil i status subskrypcji zalogowanego usera.
+    Jeśli subskrypcja nie jest aktywna — sprawdza pending_subscriptions po emailu
+    (flow: Stripe → rejestracja — user płaci przed założeniem konta).
+    """
+    from config import supabase_admin as _admin
     response = supabase.table("user_profiles").select("quiz_completed, subscription_status").eq("user_id", user_id).execute()
     row = response.data[0] if response.data else {}
     has_profile = row.get("quiz_completed") is True
     subscription_status = row.get("subscription_status")
+
+    if subscription_status != "active":
+        try:
+            auth_user = _admin.auth.admin.get_user_by_id(user_id)
+            email = auth_user.user.email.lower() if auth_user.user else None
+            if email:
+                pending = _admin.table("pending_subscriptions").select("*").eq("email", email).execute()
+                if pending.data:
+                    ps = pending.data[0]
+                    _admin.table("user_profiles").update({
+                        "subscription_status": "active",
+                        "subscription_end_date": ps.get("subscription_end_date"),
+                        "stripe_customer_id": ps.get("stripe_customer_id"),
+                    }).eq("user_id", user_id).execute()
+                    _admin.table("pending_subscriptions").delete().eq("email", email).execute()
+                    subscription_status = "active"
+        except Exception:
+            pass
+
     return {"user_id": user_id, "has_profile": has_profile, "subscription_status": subscription_status}

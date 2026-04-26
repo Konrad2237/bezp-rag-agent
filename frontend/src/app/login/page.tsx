@@ -13,7 +13,8 @@ function LoginForm() {
   const searchParams = useSearchParams()
 
   const planParam = searchParams.get('plan') ?? ''
-  const modeParam = searchParams.get('mode') === 'register' ? 'register' : 'login'
+  const paidParam = searchParams.get('paid') === '1'
+  const modeParam = (searchParams.get('mode') === 'register' || paidParam) ? 'register' : 'login'
 
   const [mode, setMode] = useState<'login' | 'register'>(modeParam)
   const [email, setEmail] = useState('')
@@ -166,6 +167,15 @@ function LoginForm() {
           <h1 className="text-xl font-bold text-white">PITBUL</h1>
           <p className="text-[#00FF88] text-xs mt-1">Twój trener AI</p>
         </div>
+
+        {/* Banner po powrocie ze Stripe */}
+        {paidParam && (
+          <div className="mb-4 px-4 py-3 bg-[#0a1a12] border border-[#00FF88]/40 rounded-xl text-sm text-zinc-300 text-center leading-relaxed">
+            <span className="text-[#00FF88] font-bold">Płatność przyjęta!</span>
+            <br />
+            Utwórz konto używając <span className="text-white font-semibold">tego samego emaila</span> co przy płatności.
+          </div>
+        )}
 
         {/* Przełącznik trybu */}
         <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">

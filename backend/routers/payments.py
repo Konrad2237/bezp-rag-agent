@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from config import supabase_admin
 from middleware import get_current_user
+from datetime import datetime, timezone
 
 router = APIRouter()
 
@@ -23,16 +24,34 @@ class CheckoutRequest(BaseModel):
     plan: str  # "week" | "month" | "quarter"
 
 
+@router.post("/payments/create-checkout-session-guest")
+async def create_checkout_session_guest(body: CheckoutRequest):
+    """Checkout bez konta — płatność przed rejestracją."""
+    price_id = PRICE_IDS.get(body.plan)
+    if not price_id:
+        raise HTTPException(status_code=400, detail="Nieprawidłowy plan")
+
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        line_items=[{"price": price_id, "quantity": 1}],
+        mode="subscription",
+        success_url=f"{FRONTEND_URL}/register?paid=1",
+        cancel_url=f"{FRONTEND_URL}/pricing",
+    )
+
+    return {"checkout_url": session.url}
+
+
 @router.post("/payments/create-checkout-session")
 async def create_checkout_session(
     body: CheckoutRequest,
     user_id: str = Depends(get_current_user),
 ):
+    """Checkout dla zalogowanego usera — subskrypcja aktywuje się natychmiast."""
     price_id = PRICE_IDS.get(body.plan)
     if not price_id:
         raise HTTPException(status_code=400, detail="Nieprawidłowy plan")
 
-    # Pobierz lub stwórz Stripe customer
     profile = supabase_admin.table("user_profiles").select(
         "stripe_customer_id, imie, nazwisko"
     ).eq("user_id", user_id).single().execute()
@@ -40,7 +59,6 @@ async def create_checkout_session(
     customer_id = profile.data.get("stripe_customer_id") if profile.data else None
 
     if not customer_id:
-        # Pobierz email z Supabase Auth
         auth_user = supabase_admin.auth.admin.get_user_by_id(user_id)
         email = auth_user.user.email if auth_user.user else None
 
@@ -85,17 +103,30 @@ async def stripe_webhook(request: Request):
         user_id = data.get("client_reference_id") or data.get("metadata", {}).get("user_id")
         subscription_id = data.get("subscription")
 
-        if user_id and subscription_id:
+        if subscription_id:
             sub = stripe.Subscription.retrieve(subscription_id)
-            end_date = sub["current_period_end"]  # Unix timestamp
+            end_dt = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
+            customer_id = data.get("customer")
 
-            from datetime import datetime, timezone
-            end_dt = datetime.fromtimestamp(end_date, tz=timezone.utc).isoformat()
-
-            supabase_admin.table("user_profiles").update({
-                "subscription_status": "active",
-                "subscription_end_date": end_dt,
-            }).eq("user_id", user_id).execute()
+            if user_id:
+                # Zalogowany user — aktywuj od razu
+                supabase_admin.table("user_profiles").update({
+                    "subscription_status": "active",
+                    "subscription_end_date": end_dt,
+                    "stripe_customer_id": customer_id,
+                }).eq("user_id", user_id).execute()
+            else:
+                # Gość — zapisz pending po emailu, aktywacja przy pierwszym /auth/me
+                customer_email = (
+                    data.get("customer_email")
+                    or (data.get("customer_details") or {}).get("email")
+                )
+                if customer_email:
+                    supabase_admin.table("pending_subscriptions").upsert({
+                        "email": customer_email.lower(),
+                        "stripe_customer_id": customer_id,
+                        "subscription_end_date": end_dt,
+                    }, on_conflict="email").execute()
 
     elif event_type == "customer.subscription.deleted":
         customer_id = data.get("customer")

@@ -39,34 +39,37 @@ export default function PricingPage() {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
 
   async function choosePlan(planId: string) {
+    setLoadingPlan(planId)
     const token = typeof window !== 'undefined' ? localStorage.getItem('bezp_token') : null
 
-    if (!token) {
-      // Niezalogowany → rejestracja z wybranym planem
-      router.push(`/login?plan=${planId}&mode=register`)
-      return
-    }
-
-    // Zalogowany → od razu Stripe Checkout
-    setLoadingPlan(planId)
     try {
-      const res = await fetch(`${API_URL}/payments/create-checkout-session`, {
+      if (token) {
+        // Zalogowany → authenticated checkout → /pricing/success
+        const res = await fetch(`${API_URL}/payments/create-checkout-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ plan: planId }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          window.location.href = data.checkout_url
+          return
+        }
+        // Token wygasł — fall through do guest checkout
+      }
+
+      // Niezalogowany (lub wygasły token) → guest checkout → /register
+      const res = await fetch(`${API_URL}/payments/create-checkout-session-guest`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: planId }),
       })
-      if (!res.ok) {
-        // Token mógł wygasnąć
-        router.push(`/login?plan=${planId}&mode=register`)
-        return
+      if (res.ok) {
+        const data = await res.json()
+        window.location.href = data.checkout_url
       }
-      const data = await res.json()
-      window.location.href = data.checkout_url
     } catch {
-      router.push(`/login?plan=${planId}&mode=register`)
+      // cicho — user zostaje na stronie
     } finally {
       setLoadingPlan(null)
     }
