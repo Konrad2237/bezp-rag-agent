@@ -1,7 +1,7 @@
-# Kolejne Kroki — po Tygodniu 9
+# Kolejne Kroki
 
 > Aktualne priorytety, techniczny dług i potencjalne bugi do ogarnięcia.
-> Ostatnia aktualizacja: 2026-04-25
+> Ostatnia aktualizacja: 2026-04-26
 
 ---
 
@@ -11,67 +11,99 @@
 
 Najważniejsza rzecz zanim projekt pójdzie do użytkowników.
 
-**Co trzeba zrobić:**
-- Integracja Stripe Checkout (subscription, nie one-time payment)
-- Webhook Stripe → backend — obsługa zdarzeń: `checkout.session.completed`, `customer.subscription.deleted`, `invoice.payment_failed`
-- Kolumna `subscription_status` w tabeli users (lub osobna tabela)
-- Middleware sprawdzający status subskrypcji przed każdym requestem do `/chat/` i `/plan/`
-- Frontend: strona cennika → Stripe Checkout → redirect po sukcesie → quiz
-- Obsługa wygaśnięcia — co widzi user bez aktywnej subskrypcji?
+**Cennik (3 plany):**
+- 19 zł / tydzień
+- 69 zł / miesiąc
+- 189 zł / 3 miesiące
+
+**Konto Stripe:**
+- Użytkownik ma już konto Stripe z innym projektem.
+- Przed startem sprawdzić czy dodać nowy produkt w tym samym koncie (Stripe pozwala mieć wiele produktów/projektów), czy lepiej założyć osobne konto.
+- Zaczynamy od Test mode — można testować bez prawdziwych kart.
+
+**Flow użytkownika po wdrożeniu:**
+```
+LP → "Zacznij teraz" → /login (zakładka Rejestracja)
+→ po rejestracji: redirect → /pricing
+→ wybór planu → Stripe Checkout
+→ webhook → subscription_status = 'active'
+→ redirect → /quiz → /chat
+```
+
+**Po zalogowaniu (istniejący user):**
+```
+/login → has_subscription?
+  tak + has_profile → /chat
+  tak + brak profilu → /quiz
+  nie → /pricing
+```
+
+**Co trzeba zrobić — backend:**
+- [ ] Kolumna `subscription_status` w `user_profiles` (wartości: `null`, `'active'`, `'cancelled'`, `'past_due'`)
+- [ ] Kolumna `subscription_end_date` — kiedy wygasa
+- [ ] Kolumna `stripe_customer_id` — żeby łączyć webhooki z userem
+- [ ] Endpoint `POST /payments/create-checkout-session` → tworzy sesję Stripe Checkout
+- [ ] Endpoint `POST /payments/webhook` → obsługuje zdarzenia Stripe:
+  - `checkout.session.completed` → ustaw `subscription_status = 'active'`
+  - `customer.subscription.deleted` → ustaw `subscription_status = 'cancelled'`
+  - `invoice.payment_failed` → ustaw `subscription_status = 'past_due'`
+- [ ] Middleware/guard na `/chat/` i `/quiz/submit` sprawdzający `subscription_status`
+- [ ] RLS — `subscription_status` może zapisywać tylko backend (service role), nie user
+
+**Co trzeba zrobić — frontend:**
+- [ ] Strona `/pricing` — 3 kafelki z planami, przyciski "Wybierz"
+- [ ] Po rejestracji redirect do `/pricing` zamiast tylko komunikatu
+- [ ] Po logowaniu: sprawdzenie subskrypcji przed przekierowaniem
+- [ ] Strona `/pricing/success` — ekran potwierdzenia po zapłacie
+- [ ] W `/settings` — sekcja "Subskrypcja": aktualny plan, data odnowienia, przycisk anulowania
+
+**Co trzeba zrobić — Stripe dashboard:**
+- [ ] Stworzyć 3 produkty (lub 1 produkt z 3 cenami)
+- [ ] Skopiować Price IDs do `.env`
+- [ ] Skonfigurować webhook URL: `https://twoja-domena/payments/webhook`
+- [ ] Skopiować Webhook Secret do `.env`
+
+**Zmienne środowiskowe do dodania:**
+```
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_WEEK=price_...
+STRIPE_PRICE_MONTH=price_...
+STRIPE_PRICE_QUARTER=price_...
+```
 
 **Uwagi:**
-- Quiz musi być dostępny dopiero po aktywnej subskrypcji (teraz jest dostępny po rejestracji)
-- Pamiętaj o RLS — `subscription_status` to dane finansowe, tylko backend może to zapisywać
+- Quiz dostępny dopiero po aktywnej subskrypcji
+- Co z userami którzy już mają profil (testy)? Można im ręcznie ustawić `subscription_status = 'active'` w Supabase
+- Przy anulowaniu: dostęp do końca okresu rozliczeniowego (nie od razu wycinać)
 
 ---
 
-### 2. Strona ustawień — brakujące funkcje
+### 2. Włączenie weryfikacji email w Supabase (5 minut, bez kodu)
 
-Strona ustawień (`/settings`) istnieje, ale jest okrojona. Do dodania:
+Zrobić zanim projekt idzie do prawdziwych użytkowników.
 
-- **Zmiana hasła** — formularz email + nowe hasło (przez Supabase Auth)
-- **Usunięcie konta** — trwałe usunięcie wszystkich danych (RODO wymaga)
-- **Zmiana danych z quizu** — user może edytować wagę, cel itp. bez rozmowy z Pitbulem
-- **Status subskrypcji** — data odnowienia, możliwość anulowania
+**Gdzie:** Supabase dashboard → Authentication → Providers → Email → "Confirm email" → włącz → Save
+
+Backend i frontend są już gotowe na ten flow (kod napisany, przetestowany).
 
 ---
 
-### 3. Dłuższy test Pitbula i Szybciora
+### 3. Testy manualne Pitbula i Szybciora
 
-Po zmianach z Tygodnia 9 (Szybcior → Sonnet, prompt fix) — zrób kilka pełnych sesji:
+Po wszystkich zmianach z Tygodnia 9 + bugfixach warto zrobić kilka pełnych sesji:
 
-- Wygeneruj kilka planów i oceń jakość (balans mięśniowy, uwzględnienie sprzętu, kontuzji)
+- Wygeneruj plan jako nowy user i jako user który już ma plan (był bug z `.update()` — właśnie naprawiony)
 - Sprawdź czy Pitbul przestał rekapitulować poprzednie wiadomości
-- Sprawdź czy edit_plan_exercise zapisuje zmiany poprawnie (był cichy bug)
-- Sprawdź jak Pitbul radzi sobie z nowymi polami z quizu (sen, stres, dieta)
+- Sprawdź jak reaguje na nowe pola quizu (sen, stres, dieta)
+- Sprawdź czy Blacha odpala się po zamknięciu okna (na desktop)
+- Na iOS Safari — Blacha może nie odpalić przez `beforeunload`; backup: n8n cron co godzinę szuka sesji bez podsumowania od >2h — sprawdzić czy workflow działa
 
 ---
 
 ## Do ogarnięcia — techniczny dług
 
-### A. Audit `.update()` bez `.select()` w całym backendzie
-
-Bug naprawiony w `edit_plan_exercise` — ale ten sam wzorzec może istnieć w innych miejscach. Warto przeszukać:
-
-```bash
-grep -rn "\.update(" backend/ | grep -v ".select("
-```
-
-Supabase-py v2: każde `.update()` bez `.select()` zwraca `data = []`. Jeśli gdzieś sprawdzamy `if not result.data:` po update — mamy potencjalny cichy błąd.
-
----
-
-### B. Limit historii planów (`plan_history`)
-
-Każda edycja ćwiczenia przez Pitbula zapisuje snapshot planu do `plan_history`. Każde generowanie planu przez Szybciora też. Po dłuższym czasie tabela może urosnąć znacząco.
-
-- `get_plan_history()` pobiera ostatnie 5 — OK
-- Ale tabela rośnie bez limitu
-- Rozważyć: automatyczne usuwanie wpisów starszych niż X dni lub limit N per user
-
----
-
-### C. Timeout na wywołania zewnętrzne
+### A. Timeouty na wywołania zewnętrzne
 
 Brak timeoutów na:
 - Supabase queries (mogą wisieć przy problemach z siecią)
@@ -82,7 +114,7 @@ Jeśli któreś zawiesi, cały request do `/chat/` wisi do limitu Railway (~30s)
 
 ---
 
-### D. Rate limiting — weryfikacja
+### B. Rate limiting — weryfikacja
 
 Rate limiter jest w backendzie, ale warto sprawdzić:
 - Czy obejmuje `/quiz/submit` (można spamować submitem)
@@ -91,13 +123,20 @@ Rate limiter jest w backendzie, ale warto sprawdzić:
 
 ---
 
-### E. Monitoring kosztów per user
+### C. Limit historii planów (`plan_history`)
 
-Teraz LangSmith pokazuje koszty per sesja, ale nie per user_id. Jeśli jeden user generuje 50 planów dziennie — nie ma alertu.
+Każda edycja i generowanie zapisuje snapshot do `plan_history`. Po dłuższym czasie tabela rośnie bez limitu.
 
-Opcje:
+- `get_plan_history()` pobiera ostatnie 5 — OK
+- Rozważyć: automatyczne usuwanie wpisów starszych niż X dni lub limit N per user
+
+---
+
+### D. Monitoring kosztów per user
+
+LangSmith pokazuje koszty per sesja, ale nie per user_id. Opcje:
 - Kolumna `tokens_used` w tabeli users + increment po każdym request
-- Albo n8n cron który sprawdza koszt z LangSmith API i wysyła email gdy przekroczy próg
+- n8n cron sprawdzający koszt z LangSmith API, email-alert gdy przekroczy próg
 
 ---
 
@@ -105,41 +144,19 @@ Opcje:
 
 ### 1. Krok `cel_wagowy` — edge case przy zmianie celu
 
-User wypełnia quiz: wybiera "masa" → wpisuje cel wagowy 95 kg → cofa się → zmienia cel na "siłę". Krok `cel_wagowy` znika z listy kroków. Dane w formularzu zostają (`form.cel_wagowy = "95"`), ale przy submicie sprawdzamy `form.cel === 'masa' || form.cel === 'redukcja'` więc cel wagowy nie trafi do backendU. Powinno być OK — ale warto przetestować ten flow ręcznie.
+User wybiera "masa" → wpisuje cel wagowy → cofa się → zmienia cel na "siłę". Dane w formularzu zostają, ale przy submicie nie trafiają do backendu (warunek `form.cel === 'masa' || form.cel === 'redukcja'`). Powinno być OK — ale warto przetestować ten flow ręcznie.
 
 ---
 
-### 2. Blacha — czy triggeruje się poprawnie?
+### 2. Historia rozmów — 6 wiadomości
 
-Blacha (summarizer) odpala się przez `beforeunload` (zamknięcie okna) → POST `/chat/session-end`. Na telefonie `beforeunload` bywa zawodny — może nie odpalić przy zamknięciu zakładki przez iOS Safari.
-
-Backup: n8n cron co godzinę szuka sesji bez podsumowania od >2h. Warto sprawdzić czy n8n workflow działa i czy Blacha jest wywoływana regularnie.
+`get_conversation_history(limit=6)` — przy dłuższych sesjach wiadomości 7-14 mogą być "zapomniane" zanim Blacha uruchomi się po raz pierwszy (co 15 wiadomości). Do obserwacji w praktyce.
 
 ---
 
-### 3. Historia rozmów — 6 wiadomości czy to wystarczy?
+### 3. Konflikt: Extraction Agent vs. dane z quizu
 
-`get_conversation_history(user_id, limit=6)` — Pitbul widzi tylko 6 ostatnich wiadomości. Przy dłuższych sesjach traci kontekst z początku rozmowy. Blacha ma to kompensować przez summary, ale summary aktualizuje się co 15 wiadomości.
-
-Luka: wiadomości 7-14 w sesji mogą być "zapomniane" jeśli Blacha jeszcze nie uruchomiła się. Czy to problem w praktyce — do obserwacji.
-
----
-
-### 4. Konflikt: Extraction Agent vs. dane z quizu
-
-Uszatek może nadpisać dane które user właśnie wpisał w quizie. Przykład: user wpisał w quizie `dieta: "pilnuje"`. W rozmowie mówi "dzisiaj zjadłem śmiecia" — Uszatek może zapisać `dieta: "nie pilnuje"`. To jeden epizod, nie regularność.
-
-Uszatek ma instrukcję "nie zapisuj jednorazowych sytuacji" — ale Haiku (który go obsługuje) może to zinterpretować różnie. Warto obserwować pole `dieta` i `jakosc_snu` w profilu po rozmowach.
-
----
-
-### 5. Supabase anon key vs. service role — RLS
-
-Backend używa dwóch klientów:
-- `supabase` (anon key) — zwykłe odczyty, podlega RLS
-- `supabase_admin` (service role) — zapisy, omija RLS
-
-Jeśli coś nie zapisuje się bez błędu — sprawdź czy używasz `supabase_admin` do write operations. Cichy błąd z `supabase` (anon) przy zapisie to jeden z częstszych "gdzie dane?" problemów.
+Uszatek może nadpisać dane wpisane w quizie na podstawie jednorazowej wzmianki w rozmowie. Instrukcja "nie zapisuj jednorazowych sytuacji" — ale Haiku może to interpretować różnie. Obserwować pola `dieta` i `jakosc_snu` po rozmowach.
 
 ---
 
