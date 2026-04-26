@@ -472,8 +472,7 @@ export default function SettingsPage() {
             <Link href="/plan" className="px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white transition-colors">Plan</Link>
             <span className="px-3 py-1.5 text-xs rounded-md bg-[#00FF88] text-black font-bold">Ustawienia</span>
           </nav>
-          <button onClick={handleLogout} className="hidden sm:inline text-zinc-500 hover:text-zinc-300 text-xs transition-colors">Wyloguj</button>
-        </div>
+                  </div>
       </header>
 
       {/* Scrollowalny content */}
@@ -890,8 +889,8 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          {/* ─── Wyloguj (mobile only) ─────────────────────────────── */}
-          <div className="block sm:hidden text-center pb-2">
+          {/* ─── Wyloguj ───────────────────────────────────────────── */}
+          <div className="text-center pb-2">
             <button onClick={handleLogout} className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors">
               Wyloguj
             </button>
