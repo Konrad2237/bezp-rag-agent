@@ -27,10 +27,14 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [gdprConsent, setGdprConsent] = useState(false)
 
-  // Gdy URL zmieni się (np. user cofa z /login?mode=register na /login), sync state
+  // Rejestracja tylko po opłaceniu — bez ?paid=1 zawsze wracaj do logowania
   useEffect(() => {
-    setMode(modeParam)
-  }, [modeParam])
+    if (modeParam === 'register' && !paidParam) {
+      router.replace('/pricing')
+    } else {
+      setMode(modeParam)
+    }
+  }, [modeParam, paidParam, router])
 
   function reset() {
     setError('')
@@ -41,6 +45,11 @@ function LoginForm() {
   }
 
   function switchMode(next: 'login' | 'register') {
+    if (next === 'register' && !paidParam) {
+      // Rejestracja tylko po opłaceniu — najpierw wybierz plan
+      router.push('/pricing')
+      return
+    }
     reset()
     setMode(next)
   }
