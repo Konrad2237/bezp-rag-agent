@@ -89,20 +89,24 @@ async def stripe_webhook(request: Request):
         customer_id = data.get("customer")
 
         if subscription_id and user_id:
+            end_dt = None
             try:
                 sub = stripe.Subscription.retrieve(subscription_id)
-                # Nowe API dahlia: current_period_end jest w sub["items"]["data"][0]["current_period_end"]
-                # Fallback na stare pole jeśli istnieje
-                end_timestamp = (
-                    sub.get("current_period_end")
-                    or sub.get("items", {}).get("data", [{}])[0].get("current_period_end")
-                )
+                # Używamy dict-style access (sub["key"]) — .get() nie działa na StripeObject v5+
+                # API dahlia: current_period_end przeniesione do items.data[0]
+                try:
+                    end_timestamp = sub["current_period_end"]
+                except (KeyError, TypeError):
+                    end_timestamp = None
+                if not end_timestamp:
+                    try:
+                        end_timestamp = sub["items"]["data"][0]["current_period_end"]
+                    except (KeyError, TypeError, IndexError):
+                        end_timestamp = None
                 if end_timestamp:
                     end_dt = datetime.fromtimestamp(end_timestamp, tz=timezone.utc).isoformat()
-                else:
-                    end_dt = None
             except Exception:
-                end_dt = None
+                pass
 
             update_data = {
                 "subscription_status": "active",
