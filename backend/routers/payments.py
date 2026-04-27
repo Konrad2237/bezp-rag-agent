@@ -1,4 +1,5 @@
 import os
+import json
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -29,7 +30,6 @@ async def create_checkout_session(
     body: CheckoutRequest,
     user_id: str = Depends(get_current_user),
 ):
-    """Checkout dla zalogowanego usera — subskrypcja aktywuje się natychmiast."""
     price_id = PRICE_IDS.get(body.plan)
     if not price_id:
         raise HTTPException(status_code=400, detail="Nieprawidłowy plan")
@@ -78,23 +78,40 @@ async def stripe_webhook(request: Request):
     except stripe.errors.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Nieprawidłowy podpis webhooka")
 
-    event_type = event["type"]
-    data = event["data"]["object"]
+    # Parsujemy payload jako plain dict — StripeObject nie wspiera .get() w nowych wersjach biblioteki
+    event_dict = json.loads(payload)
+    event_type = event_dict["type"]
+    data = event_dict["data"]["object"]
 
     if event_type == "checkout.session.completed":
-        user_id = data.get("client_reference_id") or data.get("metadata", {}).get("user_id")
+        user_id = data.get("client_reference_id") or (data.get("metadata") or {}).get("user_id")
         subscription_id = data.get("subscription")
+        customer_id = data.get("customer")
 
         if subscription_id and user_id:
-            sub = stripe.Subscription.retrieve(subscription_id)
-            end_dt = datetime.fromtimestamp(sub["current_period_end"], tz=timezone.utc).isoformat()
-            customer_id = data.get("customer")
+            try:
+                sub = stripe.Subscription.retrieve(subscription_id)
+                # Nowe API dahlia: current_period_end jest w sub["items"]["data"][0]["current_period_end"]
+                # Fallback na stare pole jeśli istnieje
+                end_timestamp = (
+                    sub.get("current_period_end")
+                    or sub.get("items", {}).get("data", [{}])[0].get("current_period_end")
+                )
+                if end_timestamp:
+                    end_dt = datetime.fromtimestamp(end_timestamp, tz=timezone.utc).isoformat()
+                else:
+                    end_dt = None
+            except Exception:
+                end_dt = None
 
-            supabase_admin.table("user_profiles").update({
+            update_data = {
                 "subscription_status": "active",
-                "subscription_end_date": end_dt,
                 "stripe_customer_id": customer_id,
-            }).eq("user_id", user_id).execute()
+            }
+            if end_dt:
+                update_data["subscription_end_date"] = end_dt
+
+            supabase_admin.table("user_profiles").update(update_data).eq("user_id", user_id).execute()
 
     elif event_type == "customer.subscription.deleted":
         customer_id = data.get("customer")
