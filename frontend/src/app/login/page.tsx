@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -10,8 +10,11 @@ const inputCls = 'w-full bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rou
 
 function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register'>(
+    searchParams.get('mode') === 'register' ? 'register' : 'login'
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -74,6 +77,10 @@ function LoginForm() {
         headers: { Authorization: `Bearer ${data.access_token}` },
       })
       const meData = await meRes.json()
+      console.log('[/auth/me] status:', meRes.status, '| subscription_status:', meData.subscription_status, '| has_profile:', meData.has_profile)
+      if (!meRes.ok) {
+        throw new Error('Błąd pobierania profilu — spróbuj ponownie')
+      }
       routeAfterLogin(meData.subscription_status, meData.has_profile)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd logowania')
@@ -173,6 +180,14 @@ function LoginForm() {
             Rejestracja
           </button>
         </div>
+
+        {mode === 'register' && (
+          <div className="bg-[#00FF88]/10 border border-[#00FF88]/30 rounded-xl px-4 py-3 mb-4">
+            <p className="text-[#00FF88] text-xs leading-snug">
+              Po rejestracji przejdziesz do wyboru planu i płatności
+            </p>
+          </div>
+        )}
 
         <div className="space-y-3">
           {mode === 'register' && (

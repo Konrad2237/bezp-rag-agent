@@ -40,7 +40,7 @@ async def register(body: RegisterRequest):
             "quiz_completed": False,
         }).execute()
 
-        return {"message": "Konto założone! Wysłaliśmy link aktywacyjny na Twój email — potwierdź go przed pierwszym logowaniem."}
+        return {"message": "Konto założone!"}
     except HTTPException:
         raise
     except Exception as e:
@@ -67,11 +67,6 @@ async def login(body: LoginRequest):
         raise
     except Exception as e:
         msg = str(e).lower()
-        if "email not confirmed" in msg:
-            raise HTTPException(
-                status_code=401,
-                detail="Email nie został potwierdzony — sprawdź skrzynkę i kliknij link aktywacyjny",
-            )
         if "invalid login credentials" in msg or "invalid email or password" in msg:
             raise HTTPException(status_code=401, detail="Błędny email lub hasło")
         raise HTTPException(status_code=401, detail="Błąd logowania — spróbuj ponownie")

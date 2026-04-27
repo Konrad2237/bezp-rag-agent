@@ -124,7 +124,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center md:items-start gap-3">
               <Link
-                href="/login"
+                href="/login?mode=register"
                 className="bg-[#00FF88] text-black font-bold px-8 py-4 rounded-xl text-base w-full sm:w-auto text-center transition-all duration-150 hover:scale-105 active:scale-[0.97] hover:shadow-[0_0_40px_rgba(0,255,136,0.5)]"
                 style={{ boxShadow: '0 0 25px rgba(0,255,136,0.25)' }}
               >
