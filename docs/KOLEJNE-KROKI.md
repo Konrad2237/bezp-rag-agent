@@ -1,81 +1,26 @@
 # Kolejne Kroki
 
 > Aktualne priorytety, techniczny dług i potencjalne bugi do ogarnięcia.
-> Ostatnia aktualizacja: 2026-04-26
+> Ostatnia aktualizacja: 2026-04-27
 
 ---
 
 ## Priorytety — co robimy następne
 
-### 1. Stripe — płatności (Faza 2 MVP)
+### 1. Sekcja "Subskrypcja" w /settings ✅ częściowo (brak anulowania)
 
-Najważniejsza rzecz zanim projekt pójdzie do użytkowników.
+Stripe działa — płatności przechodzą, webhook aktywuje konto, odnowienia automatyczne.
 
-**Cennik (3 plany):**
-- 19 zł / tydzień
-- 69 zł / miesiąc
-- 189 zł / 3 miesiące
+**Co jeszcze brakuje w /settings:**
+- Pokazanie aktualnego planu (tygodniowy / miesięczny / kwartalny)
+- Pokazanie daty odnowienia (`subscription_end_date` z bazy)
+- Przycisk "Anuluj subskrypcję" → wywołuje Stripe API → anuluje na koniec okresu
 
-**Konto Stripe:**
-- Użytkownik ma już konto Stripe z innym projektem.
-- Przed startem sprawdzić czy dodać nowy produkt w tym samym koncie (Stripe pozwala mieć wiele produktów/projektów), czy lepiej założyć osobne konto.
-- Zaczynamy od Test mode — można testować bez prawdziwych kart.
+**Backend do zrobienia:**
+- `POST /payments/cancel-subscription` — pobiera `stripe_customer_id` usera, wywołuje `stripe.Subscription.modify(sub_id, cancel_at_period_end=True)` (anuluje na koniec okresu, nie od razu)
 
-**Flow użytkownika po wdrożeniu:**
-```
-LP → "Zacznij teraz" → /login (zakładka Rejestracja)
-→ po rejestracji: redirect → /pricing
-→ wybór planu → Stripe Checkout
-→ webhook → subscription_status = 'active'
-→ redirect → /quiz → /chat
-```
-
-**Po zalogowaniu (istniejący user):**
-```
-/login → has_subscription?
-  tak + has_profile → /chat
-  tak + brak profilu → /quiz
-  nie → /pricing
-```
-
-**Co trzeba zrobić — backend:**
-- [ ] Kolumna `subscription_status` w `user_profiles` (wartości: `null`, `'active'`, `'cancelled'`, `'past_due'`)
-- [ ] Kolumna `subscription_end_date` — kiedy wygasa
-- [ ] Kolumna `stripe_customer_id` — żeby łączyć webhooki z userem
-- [ ] Endpoint `POST /payments/create-checkout-session` → tworzy sesję Stripe Checkout
-- [ ] Endpoint `POST /payments/webhook` → obsługuje zdarzenia Stripe:
-  - `checkout.session.completed` → ustaw `subscription_status = 'active'`
-  - `customer.subscription.deleted` → ustaw `subscription_status = 'cancelled'`
-  - `invoice.payment_failed` → ustaw `subscription_status = 'past_due'`
-- [ ] Middleware/guard na `/chat/` i `/quiz/submit` sprawdzający `subscription_status`
-- [ ] RLS — `subscription_status` może zapisywać tylko backend (service role), nie user
-
-**Co trzeba zrobić — frontend:**
-- [ ] Strona `/pricing` — 3 kafelki z planami, przyciski "Wybierz"
-- [ ] Po rejestracji redirect do `/pricing` zamiast tylko komunikatu
-- [ ] Po logowaniu: sprawdzenie subskrypcji przed przekierowaniem
-- [ ] Strona `/pricing/success` — ekran potwierdzenia po zapłacie
-- [ ] W `/settings` — sekcja "Subskrypcja": aktualny plan, data odnowienia, przycisk anulowania
-
-**Co trzeba zrobić — Stripe dashboard:**
-- [ ] Stworzyć 3 produkty (lub 1 produkt z 3 cenami)
-- [ ] Skopiować Price IDs do `.env`
-- [ ] Skonfigurować webhook URL: `https://twoja-domena/payments/webhook`
-- [ ] Skopiować Webhook Secret do `.env`
-
-**Zmienne środowiskowe do dodania:**
-```
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_WEEK=price_...
-STRIPE_PRICE_MONTH=price_...
-STRIPE_PRICE_QUARTER=price_...
-```
-
-**Uwagi:**
-- Quiz dostępny dopiero po aktywnej subskrypcji
-- Co z userami którzy już mają profil (testy)? Można im ręcznie ustawić `subscription_status = 'active'` w Supabase
-- Przy anulowaniu: dostęp do końca okresu rozliczeniowego (nie od razu wycinać)
+**Frontend do zrobienia:**
+- Sekcja w `frontend/src/app/settings/page.tsx` — aktualny plan, data ważności, przycisk anulowania z potwierdzeniem
 
 ---
 
@@ -85,19 +30,32 @@ Zrobić zanim projekt idzie do prawdziwych użytkowników.
 
 **Gdzie:** Supabase dashboard → Authentication → Providers → Email → "Confirm email" → włącz → Save
 
-Backend i frontend są już gotowe na ten flow (kod napisany, przetestowany).
+Backend i frontend są już gotowe na ten flow (kod napisany w poprzednich sesjach).
+
+**Uwaga:** Po włączeniu auto-login po rejestracji (`/auth/login` zaraz po `/auth/register`) przestanie działać — user będzie musiał najpierw potwierdzić email. Trzeba przetestować czy `login/page.tsx` obsługuje ten komunikat poprawnie (powinien — backend zwraca "Email nie został potwierdzony — sprawdź skrzynkę").
 
 ---
 
-### 3. Testy manualne Pitbula i Szybciora
+### 3. Testy manualne pełnego flow z nowym kontem
 
-Po wszystkich zmianach z Tygodnia 9 + bugfixach warto zrobić kilka pełnych sesji:
+Przed wpuszczeniem pierwszych użytkowników:
 
-- Wygeneruj plan jako nowy user i jako user który już ma plan (był bug z `.update()` — właśnie naprawiony)
-- Sprawdź czy Pitbul przestał rekapitulować poprzednie wiadomości
-- Sprawdź jak reaguje na nowe pola quizu (sen, stres, dieta)
-- Sprawdź czy Blacha odpala się po zamknięciu okna (na desktop)
-- Na iOS Safari — Blacha może nie odpalić przez `beforeunload`; backup: n8n cron co godzinę szuka sesji bez podsumowania od >2h — sprawdzić czy workflow działa
+- [ ] Nowe konto od zera: rejestracja → /pricing → Stripe → /pricing/success → /quiz → /chat
+- [ ] Sprawdź czy `subscription_end_date` zapisuje się poprawnie w Supabase (po ostatnim fixie)
+- [ ] Powracający user z aktywną subskrypcją: /login → /chat (bez przechodzenia przez /pricing)
+- [ ] Wygeneruj plan jako nowy user, potem poproś o nowy plan (był bug z `.update()` — sprawdź czy naprawiony)
+- [ ] Sprawdź czy Pitbul przestał rekapitulować poprzednie wiadomości
+- [ ] Na iOS Safari — czy Blacha odpala się po zamknięciu okna
+
+---
+
+### 4. Monitoring i alerty (przed pierwszymi użytkownikami)
+
+Teraz gdy jest płatny dostęp — błędy kosztują (dosłownie, ktoś zapłacił i nie może wejść).
+
+**Minimum do zrobienia:**
+- Sentry lub podobne na backendzie — alert gdy 500 na `/payments/webhook`
+- Sprawdzić Railway logi po każdej płatności przez pierwsze tygodnie
 
 ---
 
