@@ -132,3 +132,33 @@ async def stripe_webhook(request: Request):
             }).eq("stripe_customer_id", customer_id).execute()
 
     return {"status": "ok"}
+
+
+@router.post("/payments/cancel-subscription")
+async def cancel_subscription(user_id: str = Depends(get_current_user)):
+    profile = supabase_admin.table("user_profiles").select(
+        "stripe_customer_id, subscription_status"
+    ).eq("user_id", user_id).single().execute()
+
+    if not profile.data:
+        raise HTTPException(status_code=404, detail="Profil nie znaleziony")
+
+    if profile.data.get("subscription_status") != "active":
+        raise HTTPException(status_code=400, detail="Brak aktywnej subskrypcji")
+
+    customer_id = profile.data.get("stripe_customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="Brak danych Stripe — skontaktuj się z pomocą")
+
+    try:
+        subs = stripe.Subscription.list(customer=customer_id, status="active", limit=1)
+        if not subs.data:
+            raise HTTPException(status_code=404, detail="Nie znaleziono aktywnej subskrypcji w Stripe")
+        sub_id = subs.data[0]["id"]
+        stripe.Subscription.modify(sub_id, cancel_at_period_end=True)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Błąd Stripe: {str(e)}")
+
+    return {"status": "ok", "message": "Subskrypcja zostanie anulowana po zakończeniu bieżącego okresu"}

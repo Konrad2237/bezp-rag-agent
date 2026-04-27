@@ -56,6 +56,8 @@ interface Profile {
   jakosc_snu?: string; aktywnosc_codzienna?: string
   poziom_stresu?: string; dieta?: string
   osiagniecia?: string | null; notatki_quiz?: string | null
+  subscription_status?: string | null
+  subscription_end_date?: string | null
 }
 
 // ── Pomocnicze komponenty ──────────────────────────────────────────────────
@@ -226,6 +228,10 @@ export default function SettingsPage() {
   type S = 'idle' | 'saving' | 'ok' | 'error'
   const [st, setSt] = useState<Record<string, S>>({})
   const [msg, setMsg] = useState<Record<string, string>>({})
+
+  // Stan anulowania subskrypcji
+  const [cancelState, setCancelState] = useState<'idle' | 'confirm' | 'cancelling' | 'done' | 'error'>('idle')
+  const [cancelMsg, setCancelMsg] = useState('')
 
   function setStatus(id: string, status: S, message = '') {
     setSt(p => ({ ...p, [id]: status }))
@@ -403,6 +409,29 @@ export default function SettingsPage() {
       }
     } catch {
       setStatus('delete', 'error', 'Błąd połączenia')
+    }
+  }
+
+  async function cancelSubscription() {
+    setCancelState('cancelling')
+    const token = await getValidToken()
+    if (!token) { router.replace('/'); return }
+    try {
+      const res = await fetch(`${API_URL}/payments/cancel-subscription`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setCancelState('done')
+        setCancelMsg(data.message ?? 'Subskrypcja zostanie anulowana po zakończeniu bieżącego okresu')
+      } else {
+        setCancelState('error')
+        setCancelMsg(data.detail ?? 'Błąd anulowania')
+      }
+    } catch {
+      setCancelState('error')
+      setCancelMsg('Błąd połączenia')
     }
   }
 
@@ -800,6 +829,108 @@ export default function SettingsPage() {
                 </div>
               </AccordionItem>
 
+            </div>
+          </section>
+
+          {/* ─── Subskrypcja ───────────────────────────────────────── */}
+          <section>
+            <div className="mb-3">
+              <h2 className="text-white font-bold text-base">Subskrypcja</h2>
+            </div>
+
+            <div className="bg-[#0F0F0F] border border-[#1A1A1A] rounded-xl px-4 py-4 space-y-4">
+              {/* Status i data */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-zinc-400 text-sm">Status</span>
+                {profile.subscription_status === 'active' && (
+                  <span className="text-[#00FF88] text-sm font-medium">Aktywna</span>
+                )}
+                {profile.subscription_status === 'cancelled' && (
+                  <span className="text-zinc-500 text-sm font-medium">Anulowana</span>
+                )}
+                {profile.subscription_status === 'past_due' && (
+                  <span className="text-red-400 text-sm font-medium">Przeterminowana</span>
+                )}
+                {!profile.subscription_status && (
+                  <span className="text-zinc-600 text-sm">Brak</span>
+                )}
+              </div>
+
+              {profile.subscription_end_date && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-zinc-400 text-sm">
+                    {profile.subscription_status === 'cancelled' ? 'Wygasa' : 'Odnawia się'}
+                  </span>
+                  <span className="text-white text-sm">
+                    {new Date(profile.subscription_end_date).toLocaleDateString('pl-PL', {
+                      day: 'numeric', month: 'long', year: 'numeric',
+                    })}
+                  </span>
+                </div>
+              )}
+
+              {/* Przycisk anulowania — tylko gdy aktywna */}
+              {profile.subscription_status === 'active' && cancelState !== 'done' && (
+                <div className="pt-1 border-t border-[#1A1A1A]">
+                  {cancelState === 'idle' && (
+                    <button
+                      type="button"
+                      onClick={() => setCancelState('confirm')}
+                      className="text-zinc-500 hover:text-red-400 text-sm transition-colors"
+                    >
+                      Anuluj subskrypcję
+                    </button>
+                  )}
+
+                  {cancelState === 'confirm' && (
+                    <div className="space-y-3">
+                      <p className="text-zinc-400 text-sm">
+                        Subskrypcja pozostanie aktywna do końca opłaconego okresu, potem wygaśnie. Jesteś pewny?
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={cancelSubscription}
+                          className="bg-red-600 text-white text-sm font-bold px-4 py-2 rounded-xl hover:bg-red-500 transition-colors active:scale-[0.97]"
+                        >
+                          Tak, anuluj
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCancelState('idle')}
+                          className="text-zinc-500 hover:text-zinc-300 text-sm transition-colors px-2"
+                        >
+                          Nie
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {cancelState === 'cancelling' && (
+                    <p className="text-zinc-500 text-sm">Anulowanie...</p>
+                  )}
+
+                  {cancelState === 'error' && (
+                    <div className="space-y-2">
+                      <p className="text-red-400 text-sm">{cancelMsg}</p>
+                      <button
+                        type="button"
+                        onClick={() => setCancelState('idle')}
+                        className="text-zinc-500 hover:text-zinc-300 text-xs transition-colors"
+                      >
+                        Spróbuj ponownie
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Potwierdzenie anulowania */}
+              {cancelState === 'done' && (
+                <div className="pt-1 border-t border-[#1A1A1A]">
+                  <p className="text-[#00FF88] text-sm">{cancelMsg}</p>
+                </div>
+              )}
             </div>
           </section>
 

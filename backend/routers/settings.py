@@ -11,7 +11,8 @@ _PROFILE_FIELDS = (
     "imie, nazwisko, wiek, plec, wzrost, waga, poziom, cel, "
     "dni_treningowe, czas_treningu, miejsce_treningu, dostepny_sprzet, "
     "kontuzje, ograniczenia, jakosc_snu, aktywnosc_codzienna, "
-    "poziom_stresu, dieta, osiagniecia, notatki_quiz"
+    "poziom_stresu, dieta, osiagniecia, notatki_quiz, "
+    "subscription_status, subscription_end_date"
 )
 
 _CEL_VALUES = {"masa", "redukcja", "sila", "kondycja"}
