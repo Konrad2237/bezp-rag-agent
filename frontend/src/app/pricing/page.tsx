@@ -37,39 +37,44 @@ const plans = [
 export default function PricingPage() {
   const router = useRouter()
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   async function choosePlan(planId: string) {
-    setLoadingPlan(planId)
     const token = typeof window !== 'undefined' ? localStorage.getItem('bezp_token') : null
 
-    try {
-      if (token) {
-        // Zalogowany → authenticated checkout → /pricing/success
-        const res = await fetch(`${API_URL}/payments/create-checkout-session`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ plan: planId }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          window.location.href = data.checkout_url
-          return
-        }
-        // Token wygasł — fall through do guest checkout
-      }
+    if (!token) {
+      // Niezalogowany — najpierw rejestracja/logowanie
+      router.push('/login')
+      return
+    }
 
-      // Niezalogowany (lub wygasły token) → guest checkout → /register
-      const res = await fetch(`${API_URL}/payments/create-checkout-session-guest`, {
+    setLoadingPlan(planId)
+    setError('')
+
+    try {
+      const res = await fetch(`${API_URL}/payments/create-checkout-session`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ plan: planId }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        window.location.href = data.checkout_url
+
+      if (res.status === 401) {
+        // Token wygasł — wyczyść i przekieruj do logowania
+        localStorage.removeItem('bezp_token')
+        localStorage.removeItem('bezp_refresh_token')
+        router.push('/login')
+        return
       }
+
+      if (!res.ok) {
+        setError('Nie udało się uruchomić płatności — spróbuj ponownie')
+        return
+      }
+
+      const data = await res.json()
+      window.location.href = data.checkout_url
     } catch {
-      // cicho — user zostaje na stronie
+      setError('Błąd połączenia — sprawdź internet i spróbuj ponownie')
     } finally {
       setLoadingPlan(null)
     }
@@ -125,6 +130,10 @@ export default function PricingPage() {
           </div>
         ))}
       </div>
+
+      {error && (
+        <p className="text-red-400 text-sm text-center mt-6">{error}</p>
+      )}
 
       <p className="text-zinc-600 text-xs text-center mt-10">
         Masz już konto?{' '}

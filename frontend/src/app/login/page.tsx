@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -10,13 +10,8 @@ const inputCls = 'w-full bg-[#111111] border border-[#2A2A2A] text-[#F2EEE8] rou
 
 function LoginForm() {
   const router = useRouter()
-  const searchParams = useSearchParams()
 
-  const planParam = searchParams.get('plan') ?? ''
-  const paidParam = searchParams.get('paid') === '1'
-  const modeParam = (searchParams.get('mode') === 'register' || paidParam) ? 'register' : 'login'
-
-  const [mode, setMode] = useState<'login' | 'register'>(modeParam)
+  const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
@@ -27,15 +22,6 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [gdprConsent, setGdprConsent] = useState(false)
 
-  // Rejestracja tylko po opłaceniu — bez ?paid=1 zawsze wracaj do logowania
-  useEffect(() => {
-    if (modeParam === 'register' && !paidParam) {
-      router.replace('/pricing')
-    } else {
-      setMode(modeParam)
-    }
-  }, [modeParam, paidParam, router])
-
   function reset() {
     setError('')
     setMessage('')
@@ -45,11 +31,6 @@ function LoginForm() {
   }
 
   function switchMode(next: 'login' | 'register') {
-    if (next === 'register' && !paidParam) {
-      // Rejestracja tylko po opłaceniu — najpierw wybierz plan
-      router.push('/pricing')
-      return
-    }
     reset()
     setMode(next)
   }
@@ -83,11 +64,7 @@ function LoginForm() {
           : Array.isArray(data.detail)
             ? data.detail.map((e: { msg: string }) => e.msg).join(', ')
             : 'Błąd logowania'
-        const msg = detail
-          .replace('Invalid login credentials', 'Błędny email lub hasło')
-          .replace('Email not confirmed', 'Email nie został potwierdzony — sprawdź skrzynkę')
-          .replace('User already registered', 'Konto z tym emailem już istnieje')
-        throw new Error(msg)
+        throw new Error(detail)
       }
 
       localStorage.setItem('bezp_token', data.access_token)
@@ -128,7 +105,6 @@ function LoginForm() {
 
     setLoading(true)
     try {
-      // 1. Zarejestruj konto
       const res = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -142,7 +118,7 @@ function LoginForm() {
         throw new Error(detail || 'Błąd rejestracji')
       }
 
-      // 2. Cichy auto-login — zapisz token żeby /pricing mogło od razu iść do Stripe
+      // Auto-login po rejestracji
       const loginRes = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -153,7 +129,8 @@ function LoginForm() {
         localStorage.setItem('bezp_token', loginData.access_token)
         if (loginData.refresh_token) localStorage.setItem('bezp_refresh_token', loginData.refresh_token)
       }
-      // Niezależnie czy auto-login się udał — zawsze idź do /pricing
+
+      // Zawsze idź do /pricing — tam user wybierze plan i zapłaci
       router.push('/pricing')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Błąd rejestracji')
@@ -177,16 +154,7 @@ function LoginForm() {
           <p className="text-[#00FF88] text-xs mt-1">Twój trener AI</p>
         </div>
 
-        {/* Banner po powrocie ze Stripe */}
-        {paidParam && (
-          <div className="mb-4 px-4 py-3 bg-[#0a1a12] border border-[#00FF88]/40 rounded-xl text-sm text-zinc-300 text-center leading-relaxed">
-            <span className="text-[#00FF88] font-bold">Płatność przyjęta!</span>
-            <br />
-            Utwórz konto używając <span className="text-white font-semibold">tego samego emaila</span> co przy płatności.
-          </div>
-        )}
-
-        {/* Przełącznik trybu — zakładka Rejestracja tylko po opłaceniu */}
+        {/* Przełącznik trybu */}
         <div className="flex mb-6 bg-[#111111] border border-[#2A2A2A] rounded-xl p-1">
           <button
             onClick={() => switchMode('login')}
@@ -196,20 +164,18 @@ function LoginForm() {
           >
             Logowanie
           </button>
-          {paidParam && (
-            <button
-              onClick={() => switchMode('register')}
-              className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
-                mode === 'register' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Rejestracja
-            </button>
-          )}
+          <button
+            onClick={() => switchMode('register')}
+            className={`flex-1 py-2 text-sm rounded-lg transition-colors font-medium ${
+              mode === 'register' ? 'bg-[#00FF88] text-black' : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            Rejestracja
+          </button>
         </div>
 
         <div className="space-y-3">
-          {paidParam && mode === 'register' && (
+          {mode === 'register' && (
             <>
               <input type="text" placeholder="Imię" value={imie} onChange={e => setImie(e.target.value)} className={inputCls} />
               <input type="text" placeholder="Nazwisko" value={nazwisko} onChange={e => setNazwisko(e.target.value)} className={inputCls} />
@@ -226,7 +192,7 @@ function LoginForm() {
             className={inputCls}
           />
 
-          {paidParam && mode === 'register' && (
+          {mode === 'register' && (
             <>
               <input type="password" placeholder="Powtórz hasło" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} className={inputCls} />
               <label className="flex items-start gap-3 cursor-pointer" onClick={() => setGdprConsent(v => !v)}>
@@ -253,24 +219,16 @@ function LoginForm() {
           {message && <p className="text-[#00FF88] text-sm">{message}</p>}
 
           <button
-            onClick={paidParam && mode === 'register' ? handleRegister : handleLogin}
+            onClick={mode === 'register' ? handleRegister : handleLogin}
             disabled={loading}
             className="w-full bg-[#00FF88] text-black font-bold py-3.5 rounded-xl hover:brightness-110 disabled:opacity-50 transition-all active:scale-[0.97]"
             style={{ boxShadow: '0 0 20px rgba(0,255,136,0.2)' }}
           >
-            {loading ? '...' : paidParam && mode === 'register' ? 'Zarejestruj się' : 'Zaloguj się'}
+            {loading ? '...' : mode === 'register' ? 'Zarejestruj się' : 'Zaloguj się'}
           </button>
         </div>
 
-        {!paidParam && (
-          <p className="text-zinc-500 text-xs text-center mt-4">
-            Nie masz konta?{' '}
-            <Link href="/pricing" className="text-[#00FF88] hover:brightness-110 transition-colors">
-              Wybierz plan →
-            </Link>
-          </p>
-        )}
-        <p className="text-zinc-600 text-xs text-center mt-3">
+        <p className="text-zinc-600 text-xs text-center mt-4">
           <Link href="/" className="hover:text-zinc-400 transition-colors">← Wróć na stronę główną</Link>
         </p>
       </div>
