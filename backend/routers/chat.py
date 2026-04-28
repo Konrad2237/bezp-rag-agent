@@ -141,6 +141,9 @@ async def chat(
             while not agent_task.done():
                 if await request.is_disconnected():
                     agent_task.cancel()
+                    # Blacha musi się odpalić mimo disconnectu — zlecamy background
+                    # task z tym co zebraliśmy, żeby Blacha miała szansę uruchomić się
+                    asyncio.create_task(background_tasks(user_id, body.message, full_response, user_profile))
                     return
                 try:
                     await asyncio.wait_for(asyncio.shield(agent_task), timeout=20.0)
