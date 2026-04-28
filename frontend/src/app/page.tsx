@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AnimatedChatWindow, type Msg } from './components/AnimatedChatWindow'
 import { Accordion } from './components/Accordion'
+import { EbookForm } from './components/EbookForm'
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -360,12 +361,7 @@ export default function LandingPage() {
               i sam oceń czy wiesz co robisz na siłowni. 90 stron bez mitów i bzdur z TikToka.
             </p>
           </div>
-          <a
-            href="/ebook.pdf"
-            className="bg-[#1A1A1A] border border-[#2A2A2A] text-[#F2EEE8] font-semibold px-5 py-3 rounded-xl text-sm hover:bg-[#2A2A2A] active:scale-[0.97] transition-all duration-150 whitespace-nowrap shrink-0"
-          >
-            Pobierz za darmo →
-          </a>
+          <EbookForm />
         </div>
       </section>
 
