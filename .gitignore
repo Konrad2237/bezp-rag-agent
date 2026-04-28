@@ -24,3 +24,6 @@ env/
 
 # Logi
 *.log
+
+# Dokumentacja lokalna — nie na GitHub
+docs/ADR-*.md
