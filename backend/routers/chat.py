@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -13,6 +13,11 @@ import asyncio
 import json
 
 router = APIRouter()
+
+# Atomowy licznik in-flight requestów per user — chroni przed race condition
+# w rate limiterze (DB odczyt przed zapisem wiadomości)
+_in_flight: dict[str, int] = {}
+_rate_lock = asyncio.Lock()
 
 
 class ChatRequest(BaseModel):
@@ -53,46 +58,57 @@ async def background_tasks(user_id: str, user_message: str, agent_response: str,
         await run_in_threadpool(run_summarizer_agent, user_id)
 
 
-def check_rate_limit(user_id: str):
+async def check_rate_limit(user_id: str):
     """
-    Sprawdza rate limit: max 30 wiadomości dziennie + max 5 na minutę.
-    Rzuca HTTPException 429 jeśli limit przekroczony.
+    Sprawdza rate limit: max 100 wiadomości dziennie + max 5 na minutę.
+    Per-minutowy limit jest atomowy: liczy DB + in-flight requesty pod lockiem
+    żeby uniknąć race condition przy concurrent requestach.
+    Po powrocie z tej funkcji _in_flight[user_id] jest zwiększony o 1 —
+    wywołujący MUSI wywołać _release_rate_limit_claim() po zakończeniu requestu.
     """
-    from datetime import datetime, timezone, timedelta
-
     now = datetime.now(timezone.utc)
     day_ago = (now - timedelta(days=1)).isoformat()
     minute_ago = (now - timedelta(minutes=1)).isoformat()
 
-    daily = supabase.table("messages")\
-        .select("id", count="exact")\
-        .eq("user_id", user_id)\
-        .eq("role", "user")\
-        .gte("created_at", day_ago)\
-        .execute()
-
+    daily = await run_in_threadpool(
+        lambda: supabase.table("messages")
+            .select("id", count="exact")
+            .eq("user_id", user_id).eq("role", "user")
+            .gte("created_at", day_ago).execute()
+    )
     if daily.count and daily.count >= 100:
         raise HTTPException(
             status_code=429,
             detail="Dzienny limit wiadomości wyczerpany. Wróć jutro."
         )
 
-    per_minute = supabase.table("messages")\
-        .select("id", count="exact")\
-        .eq("user_id", user_id)\
-        .eq("role", "user")\
-        .gte("created_at", minute_ago)\
-        .execute()
+    per_minute = await run_in_threadpool(
+        lambda: supabase.table("messages")
+            .select("id", count="exact")
+            .eq("user_id", user_id).eq("role", "user")
+            .gte("created_at", minute_ago).execute()
+    )
+    db_count = per_minute.count or 0
 
-    if per_minute.count and per_minute.count >= 5:
-        raise HTTPException(
-            status_code=429,
-            detail="Za dużo wiadomości naraz. Poczekaj chwilę."
-        )
+    # Atomowe sprawdzenie: DB count + in-flight musi być < 5
+    async with _rate_lock:
+        in_flight = _in_flight.get(user_id, 0)
+        if db_count + in_flight >= 5:
+            raise HTTPException(
+                status_code=429,
+                detail="Za dużo wiadomości naraz. Poczekaj chwilę."
+            )
+        _in_flight[user_id] = in_flight + 1
+
+
+def _release_rate_limit_claim(user_id: str):
+    """Zwalnia slot w_in_flight po zakończeniu requestu."""
+    _in_flight[user_id] = max(0, _in_flight.get(user_id, 0) - 1)
 
 
 @router.post("/")
 async def chat(
+    request: Request,
     body: ChatRequest,
     user_id: str = Depends(require_active_subscription)
 ):
@@ -101,8 +117,9 @@ async def chat(
     if len(body.message) > 2000:
         raise HTTPException(status_code=400, detail="Wiadomość za długa (max 2000 znaków)")
 
-    check_rate_limit(user_id)
+    # get_user_profile przed check_rate_limit — jeśli tu wybuchnie, claim nie był ustawiony
     user_profile = await run_in_threadpool(get_user_profile, user_id)
+    await check_rate_limit(user_id)  # od tu _in_flight[user_id] += 1
 
     async def generate():
         full_response = ""
@@ -118,13 +135,19 @@ async def chat(
 
         agent_task = asyncio.create_task(run_agent())
 
-        # Co 20s wysyłaj keepalive żeby Railway/proxy nie zamknęło połączenia
-        # (szczególnie ważne przy generowaniu planu — 3 wywołania Claude)
-        while not agent_task.done():
-            try:
-                await asyncio.wait_for(asyncio.shield(agent_task), timeout=20.0)
-            except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
+        try:
+            # Co 20s keepalive żeby Railway/proxy nie zamknęło połączenia
+            # (szczególnie ważne przy generowaniu planu — 3 wywołania Claude)
+            while not agent_task.done():
+                if await request.is_disconnected():
+                    agent_task.cancel()
+                    return
+                try:
+                    await asyncio.wait_for(asyncio.shield(agent_task), timeout=20.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            _release_rate_limit_claim(user_id)
 
         if agent_exception:
             yield f"data: {json.dumps({'error': str(agent_exception)})}\n\n"
