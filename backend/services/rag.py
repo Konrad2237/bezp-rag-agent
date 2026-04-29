@@ -10,7 +10,7 @@ def get_embedding(text: str) -> list[float]:
     return response.data[0].embedding
 
 
-def search_knowledge(query: str, top_k: int = 3, threshold: float = 0.3) -> str:
+def search_knowledge(query: str, top_k: int = 5, threshold: float = 0.3) -> str:
     """
     Similarity search w Supabase pgvector.
     Zwraca sformatowany string z chunkami lub info o braku wyników.

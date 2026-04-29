@@ -377,12 +377,17 @@ def fetch_context(state: AgentState) -> AgentState:
             "text": dynamic_context,
         },
     ])]
+    # Filtruj puste wiadomości — mogły trafić do DB gdy agent zwrócił pusty string.
+    # Anthropic API odrzuca messages z pustym content ("non-empty content" error).
     for msg in history:
+        content = msg.get("content", "")
+        if not content or not str(content).strip():
+            continue
         if msg["role"] == "user":
-            messages.append(HumanMessage(content=msg["content"]))
+            messages.append(HumanMessage(content=content))
         else:
             from langchain_core.messages import AIMessage
-            messages.append(AIMessage(content=msg["content"]))
+            messages.append(AIMessage(content=content))
 
     messages.append(HumanMessage(content=state["user_message"]))
 
