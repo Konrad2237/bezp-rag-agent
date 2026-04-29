@@ -27,3 +27,6 @@ env/
 
 # Dokumentacja lokalna — nie na GitHub
 docs/ADR-*.md
+
+# Testy — lokalnie tylko
+tests/
