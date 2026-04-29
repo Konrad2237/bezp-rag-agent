@@ -11,6 +11,7 @@ from config import supabase, claude_client
 from datetime import datetime, timezone, timedelta
 import asyncio
 import json
+import os
 
 router = APIRouter()
 
@@ -58,13 +59,18 @@ async def background_tasks(user_id: str, user_message: str, agent_response: str,
         await run_in_threadpool(run_summarizer_agent, user_id)
 
 
+DAILY_LIMIT     = int(os.getenv("RATE_DAILY_LIMIT", "100"))
+PER_MINUTE_LIMIT = int(os.getenv("RATE_PER_MINUTE_LIMIT", "5"))
+
+
 async def check_rate_limit(user_id: str):
     """
-    Sprawdza rate limit: max 100 wiadomości dziennie + max 5 na minutę.
+    Sprawdza rate limit: max DAILY_LIMIT wiadomości dziennie + max PER_MINUTE_LIMIT na minutę.
     Per-minutowy limit jest atomowy: liczy DB + in-flight requesty pod lockiem
     żeby uniknąć race condition przy concurrent requestach.
     Po powrocie z tej funkcji _in_flight[user_id] jest zwiększony o 1 —
     wywołujący MUSI wywołać _release_rate_limit_claim() po zakończeniu requestu.
+    Limity konfigurowalne przez env: RATE_DAILY_LIMIT, RATE_PER_MINUTE_LIMIT.
     """
     now = datetime.now(timezone.utc)
     day_ago = (now - timedelta(days=1)).isoformat()
@@ -76,7 +82,7 @@ async def check_rate_limit(user_id: str):
             .eq("user_id", user_id).eq("role", "user")
             .gte("created_at", day_ago).execute()
     )
-    if daily.count and daily.count >= 100:
+    if daily.count and daily.count >= DAILY_LIMIT:
         raise HTTPException(
             status_code=429,
             detail="Dzienny limit wiadomości wyczerpany. Wróć jutro."
@@ -90,10 +96,10 @@ async def check_rate_limit(user_id: str):
     )
     db_count = per_minute.count or 0
 
-    # Atomowe sprawdzenie: DB count + in-flight musi być < 5
+    # Atomowe sprawdzenie: DB count + in-flight musi być < PER_MINUTE_LIMIT
     async with _rate_lock:
         in_flight = _in_flight.get(user_id, 0)
-        if db_count + in_flight >= 5:
+        if db_count + in_flight >= PER_MINUTE_LIMIT:
             raise HTTPException(
                 status_code=429,
                 detail="Za dużo wiadomości naraz. Poczekaj chwilę."
