@@ -185,17 +185,19 @@ async def update_profile(body: ProfileUpdateRequest, user_id: str = Depends(get_
             raise HTTPException(400, "Nieprawidłowa dieta")
         update_data["dieta"] = body.dieta
 
-    # Pola tekstowe — czysczymy pustymi stringami do null
+    # Pola tekstowe — czysczymy pustymi stringami do null; usuwamy null byte (PostgreSQL go odrzuca)
     for field in ("kontuzje", "ograniczenia", "osiagniecia", "notatki_quiz"):
         val = getattr(body, field)
         if val is not None:
+            val = val.replace('\x00', '')
             update_data[field] = val.strip() or None
 
     if not update_data:
         raise HTTPException(400, "Podaj co najmniej jedno pole do zmiany")
 
-    result = supabase_admin.table("user_profiles").update(update_data).eq("user_id", user_id).select("user_id").execute()
-    if not result.data:
+    try:
+        supabase_admin.table("user_profiles").update(update_data).eq("user_id", user_id).execute()
+    except Exception:
         raise HTTPException(500, "Nie udało się zaktualizować profilu — spróbuj ponownie")
     return {"message": "Profil zaktualizowany"}
 

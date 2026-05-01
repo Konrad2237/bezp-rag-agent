@@ -75,7 +75,9 @@ async def stripe_webhook(request: Request):
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, WEBHOOK_SECRET)
-    except stripe.errors.SignatureVerificationError:
+    except (stripe.error.SignatureVerificationError, ValueError, TypeError):
+        # ValueError: sig_header jest None lub payload nieprawidłowy
+        # TypeError: construct_event dostał nieprawidłowy typ
         raise HTTPException(status_code=400, detail="Nieprawidłowy podpis webhooka")
 
     # Parsujemy payload jako plain dict — StripeObject nie wspiera .get() w nowych wersjach biblioteki
