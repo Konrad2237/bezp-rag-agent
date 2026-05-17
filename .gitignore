@@ -31,3 +31,6 @@ docs/ADR-*.md
 
 # Testy — lokalnie tylko
 tests/
+
+# Lokalne notatki — nie na GitHub
+notatki/
