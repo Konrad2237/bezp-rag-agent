@@ -79,7 +79,7 @@ def ask_agent(user_message: str) -> str:
 
     # Wyślij do Claude
     response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=1024,
         system=full_system,
         messages=[
