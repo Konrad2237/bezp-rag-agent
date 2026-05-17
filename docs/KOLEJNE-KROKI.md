@@ -5,57 +5,56 @@
 
 ---
 
+## Co zostało zrobione (gotowe ✅)
+
+- ✅ Sekcja "Subskrypcja" w `/settings` — status, data ważności, anulowanie z potwierdzeniem
+- ✅ Endpoint `POST /payments/cancel-subscription`
+- ✅ LP "Zacznij teraz" → otwiera zakładkę Rejestracja (nie Logowanie)
+- ✅ Baner informacyjny w formularzu rejestracji ("Po rejestracji przejdziesz do płatności")
+- ✅ Usunięty mylący komunikat o potwierdzeniu emaila
+- ✅ Weryfikacja emaila — decyzja: **nie włączamy** (złamałoby auto-login po rejestracji)
+
+---
+
 ## Priorytety — co robimy następne
 
-### 1. Sekcja "Subskrypcja" w /settings ✅ częściowo (brak anulowania)
+### 1. Edge case'y do przetestowania ręcznie — WAŻNE ⚠️
 
-Stripe działa — płatności przechodzą, webhook aktywuje konto, odnowienia automatyczne.
+Przed wpuszczeniem pierwszych użytkowników przetestuj te scenariusze:
 
-**Co jeszcze brakuje w /settings:**
-- Pokazanie aktualnego planu (tygodniowy / miesięczny / kwartalny)
-- Pokazanie daty odnowienia (`subscription_end_date` z bazy)
-- Przycisk "Anuluj subskrypcję" → wywołuje Stripe API → anuluje na koniec okresu
+**Flow podstawowy (nowe konto):**
+- [ ] Rejestracja od zera → `/pricing` → Stripe Checkout → `/pricing/success` → `/quiz` → `/chat`
+- [ ] Sprawdź czy `subscription_end_date` zapisuje się w Supabase po płatności
+- [ ] Powracający user z aktywną subskrypcją: `/login` → `/chat` (bez `/pricing`)
 
-**Backend do zrobienia:**
-- `POST /payments/cancel-subscription` — pobiera `stripe_customer_id` usera, wywołuje `stripe.Subscription.modify(sub_id, cancel_at_period_end=True)` (anuluje na koniec okresu, nie od razu)
+**Anulowanie subskrypcji:**
+- [ ] Anuluj subskrypcję w Ustawieniach → komunikat "zostanie anulowana po zakończeniu okresu" ✓ (przetestowane)
+- [ ] **Co się dzieje gdy subskrypcja wygaśnie po anulowaniu** — przy kolejnym logowaniu user powinien trafić na `/pricing`
+- [ ] **Czy user z `cancelled` ale wciąż w trakcie okresu** widzi coś sensownego w Ustawieniach (badge, data)
+- [ ] **Podwójne kliknięcie "Anuluj"** — backend powinien zwrócić 400, nie crashować
+- [ ] **Nowa subskrypcja po anulowaniu** — czy cały flow od `/pricing` działa po raz drugi na tym samym koncie
 
-**Frontend do zrobienia:**
-- Sekcja w `frontend/src/app/settings/page.tsx` — aktualny plan, data ważności, przycisk anulowania z potwierdzeniem
-
----
-
-### 2. Włączenie weryfikacji email w Supabase (5 minut, bez kodu)
-
-Zrobić zanim projekt idzie do prawdziwych użytkowników.
-
-**Gdzie:** Supabase dashboard → Authentication → Providers → Email → "Confirm email" → włącz → Save
-
-Backend i frontend są już gotowe na ten flow (kod napisany w poprzednich sesjach).
-
-**Uwaga:** Po włączeniu auto-login po rejestracji (`/auth/login` zaraz po `/auth/register`) przestanie działać — user będzie musiał najpierw potwierdzić email. Trzeba przetestować czy `login/page.tsx` obsługuje ten komunikat poprawnie (powinien — backend zwraca "Email nie został potwierdzony — sprawdź skrzynkę").
+**Inne edge case'y:**
+- [ ] Plan generuje się jako nowy user → potem poproś o nowy plan (był bug z `.update()` przy generowaniu)
+- [ ] Wygeneruj plan, potem edytuj go w `/settings` — sprawdź czy zapis działa
+- [ ] Na iOS Safari — czy Blacha odpala się po zamknięciu okna czatu
 
 ---
 
-### 3. Testy manualne pełnego flow z nowym kontem
-
-Przed wpuszczeniem pierwszych użytkowników:
-
-- [ ] Nowe konto od zera: rejestracja → /pricing → Stripe → /pricing/success → /quiz → /chat
-- [ ] Sprawdź czy `subscription_end_date` zapisuje się poprawnie w Supabase (po ostatnim fixie)
-- [ ] Powracający user z aktywną subskrypcją: /login → /chat (bez przechodzenia przez /pricing)
-- [ ] Wygeneruj plan jako nowy user, potem poproś o nowy plan (był bug z `.update()` — sprawdź czy naprawiony)
-- [ ] Sprawdź czy Pitbul przestał rekapitulować poprzednie wiadomości
-- [ ] Na iOS Safari — czy Blacha odpala się po zamknięciu okna
-
----
-
-### 4. Monitoring i alerty (przed pierwszymi użytkownikami)
+### 2. Monitoring i alerty (przed pierwszymi użytkownikami)
 
 Teraz gdy jest płatny dostęp — błędy kosztują (dosłownie, ktoś zapłacił i nie może wejść).
 
 **Minimum do zrobienia:**
 - Sentry lub podobne na backendzie — alert gdy 500 na `/payments/webhook`
-- Sprawdzić Railway logi po każdej płatności przez pierwsze tygodnie
+- Sprawdzać Railway logi po każdej płatności przez pierwsze tygodnie
+
+---
+
+### 3. Testy manualne pozostałe
+
+- [ ] Sprawdź czy Pitbul przestał rekapitulować poprzednie wiadomości
+- [ ] Wygeneruj kilka planów z różnymi profilami — sprawdź jakość odpowiedzi
 
 ---
 
@@ -115,6 +114,12 @@ User wybiera "masa" → wpisuje cel wagowy → cofa się → zmienia cel na "si�
 ### 3. Konflikt: Extraction Agent vs. dane z quizu
 
 Uszatek może nadpisać dane wpisane w quizie na podstawie jednorazowej wzmianki w rozmowie. Instrukcja "nie zapisuj jednorazowych sytuacji" — ale Haiku może to interpretować różnie. Obserwować pola `dieta` i `jakosc_snu` po rozmowach.
+
+---
+
+### 4. Subskrypcja — badge po wygaśnięciu
+
+Po tym jak Stripe wyśle `customer.subscription.deleted` i webhook ustawi `subscription_status = 'cancelled'` — user widzący `/settings` zobaczy badge "Anulowana". Sprawdzić czy badge i data wyświetlają się sensownie w tym stanie (a nie pusty ekran czy błąd).
 
 ---
 
