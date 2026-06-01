@@ -4,6 +4,13 @@
 
 **Demo:** [bezp-rag-agent.vercel.app](https://bezp-rag-agent.vercel.app)
 
+![Chat z AI trenerem](https://github.com/user-attachments/assets/628646ca-4fdb-44bb-bd34-03bccd2c41b2)
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/8d22a273-092c-42ee-b70f-87bc1fd43fef" width="62%" alt="Plan treningowy" />
+  <img src="https://github.com/user-attachments/assets/6596b853-d4db-4389-950b-2d8147d416bb" width="34%" alt="Profil użytkownika" />
+</p>
+
 ---
 
 ## Spis treści
