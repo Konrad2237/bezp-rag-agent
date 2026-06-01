@@ -26,14 +26,14 @@
 
 ## Funkcjonalności
 
-- **Chat z AI trenerem** — streaming rozmowy z Claude Sonnet 4.6, odpowiedzi zakorzenione w bazie wiedzy RAG. Agent sam decyduje kiedy przeszukać bazę, kiedy wyszukać w sieci, a kiedy wygenerować plan
-- **Quiz onboardingowy** — 22 pytania zbierające profil użytkownika (cel, wiek, waga, poziom, sprzęt, wyniki na ćwiczeniach bazowych). Dane trafiają do bazy i są dołączane do każdego requestu
-- **Generowanie planu treningowego** — Szybcior (pipeline Claude Sonnet) tworzy pełny plan JSON: ćwiczenia, serie, powtórzenia, progresja, notatki. Plan można edytować przez chat
+- **Chat z AI trenerem** — rozmowa z Claude Sonnet 4.6, odpowiedzi oparte na bazie wiedzy, nie wymyślone. Agent sam decyduje kiedy przeszukać bazę, kiedy wyszukać w sieci, a kiedy wygenerować plan
+- **Quiz onboardingowy** — 22 pytania zbierające profil użytkownika (cel, wiek, waga, poziom, sprzęt, wyniki na ćwiczeniach bazowych). Dane są używane przy każdej odpowiedzi
+- **Generowanie planu treningowego** — Szybcior (Claude Sonnet) tworzy gotowy plan: ćwiczenia, serie, powtórzenia, progresja, notatki. Plan można edytować przez chat
 - **Aktualizacja profilu w tle** — po każdej rozmowie Uszatek (Claude Haiku) wyciąga z niej nowe informacje o użytkowniku i aktualizuje profil bez pytania
 - **Kondensacja historii** — co 15 wiadomości Blacha (Claude Haiku) tworzy podsumowanie sesji (max 250 słów), żeby agent zawsze miał kontekst nawet po długich rozmowach
-- **Strona ustawień** — zmiana emaila, hasła, 18 pól profilu, podgląd planu, usunięcie konta (kaskada 8 tabel)
-- **Subskrypcja Stripe** — checkout, webhook, anulowanie z zachowaniem dostępu do końca okresu rozliczeniowego
-- **Rate limiting** — 5 wiadomości/minutę i 100/dzień, atomic check przez `asyncio.Lock` zapobiegający race condition przy równoległych requestach
+- **Strona ustawień** — zmiana emaila, hasła, 18 pól profilu, podgląd planu, usunięcie konta
+- **Subskrypcja Stripe** — płatność, automatyczne potwierdzenia, anulowanie z zachowaniem dostępu do końca okresu
+- **Limit wiadomości** — 5/minutę i 100/dzień. Zabezpieczony przed sytuacją gdy kilka wiadomości przychodzi w tym samym momencie
 
 ---
 
@@ -52,7 +52,7 @@
 | Supabase Python | najnowsza | Klient bazy danych i autentykacji |
 | Stripe | najnowsza | Płatności i subskrypcje |
 | Tavily Python | najnowsza | Web search dla agenta |
-| httpx | najnowsza | Async HTTP (weryfikacja hasła przez gotrue API) |
+| httpx | najnowsza | Async HTTP client (weryfikacja haseł) |
 | Pydantic | v2 | Walidacja requestów |
 | LangSmith | najnowsza | Tracing wywołań LLM (opcjonalne) |
 
@@ -71,10 +71,10 @@
 
 | Serwis | Do czego |
 |---|---|
-| Supabase (PostgreSQL + pgvector) | Baza danych, autentykacja, similarity search (HNSW) |
+| Supabase (PostgreSQL + pgvector) | Baza danych, autentykacja, wyszukiwanie semantyczne |
 | Anthropic Claude Sonnet 4.6 | Główny agent (Pitbul) + generator planów (Szybcior) |
 | Anthropic Claude Haiku 4.5 | Ekstrakcja profilu (Uszatek) + sumaryzacja (Blacha) |
-| OpenAI text-embedding-3-small | Wektory RAG (1536 dim, 1364 chunki z 8 źródeł) |
+| OpenAI text-embedding-3-small | Generowanie wektorów do wyszukiwania w bazie wiedzy (1364 fragmenty z 8 źródeł) |
 | Tavily | Web search w czasie rzeczywistym |
 | Stripe | Subskrypcje |
 | Railway | Hosting backendu |
@@ -159,13 +159,13 @@ System składa się z czterech komponentów AI. Tylko jeden z nich jest prawdziw
 
 ### Pitbul — główny agent (`agents/graph.py`) · Claude Sonnet 4.6
 
-Jedyny komponent z prawdziwą pętlą decyzyjną. Zbudowany jako LangGraph `StateGraph` z 4 węzłami: `fetch_context → orchestrator → tools ↔ orchestrator → post_process`. Przy każdym requestcie dostaje profil użytkownika, ostatnie 6 wiadomości, podsumowanie sesji i listę nierozwiązanych sprzeczności w profilu. Sam decyduje które narzędzie wywołać (i czy w ogóle), ile razy i kiedy zakończyć.
+Jedyny komponent z prawdziwą pętlą decyzyjną. Przy każdym zapytaniu dostaje profil użytkownika, ostatnie 6 wiadomości, podsumowanie sesji i listę nierozwiązanych sprzeczności w profilu. Sam decyduje które narzędzie wywołać (i czy w ogóle), ile razy i kiedy zakończyć.
 
 **Narzędzia Pitbula:**
 
 | Narzędzie | Co robi |
 |---|---|
-| `search_knowledge_tool` | Similarity search w pgvector — odpytuje 1364 chunki z 8 źródeł naukowych (top_k=5, threshold=0.3) |
+| `search_knowledge_tool` | Przeszukuje bazę wiedzy — 1364 fragmenty z 8 źródeł naukowych — i zwraca najbardziej trafne |
 | `search_web_tool` | Tavily API — dla pytań spoza bazy wiedzy, np. aktualne badania lub sprzęt |
 | `generate_training_plan` | Wywołuje Szybciora i zwraca wygenerowany plan treningowy |
 | `edit_plan_exercise` | Modyfikuje konkretne ćwiczenie w planie (UPDATE w tabeli training_plans) |
@@ -175,28 +175,19 @@ Jedyny komponent z prawdziwą pętlą decyzyjną. Zbudowany jako LangGraph `Stat
 
 ### Szybcior — generator planów (`agents/plan_generator.py`) · Claude Sonnet 4.6
 
-Nie jest agentem — to deterministyczny pipeline LangGraph bez tool calls. Węzeł `setup` pre-injectuje kontekst RAG, historię poprzednich planów i podsumowanie sesji bezpośrednio do HumanMessage. Model generuje pełny plan jako JSON w jednym wywołaniu. LangGraph używany wyłącznie do obsługi retry gdy model zwróci pusty output (limit 5 prób).
+Nie jest agentem — generuje plan w jednym wywołaniu modelu, bez pętli decyzyjnej. Przed wywołaniem dostaje bazę wiedzy, historię poprzednich planów i podsumowanie sesji. Jeśli model zwróci pusty wynik, próbuje maksymalnie 5 razy.
 
 ---
 
 ### Uszatek — ekstrakcja profilu (`agents/extraction.py`) · Claude Haiku 4.5
 
-Pojedyncze wywołanie LLM uruchamiane w tle (`BackgroundTasks`) po każdej wymianie wiadomości. Dostaje ostatnią wymianę (user + agent) i aktualny profil użytkownika. Zwraca JSON:
-
-```json
-{
-  "updates": [{"field": "waga", "value": "85"}],
-  "conflicts": [{"field": "poziom", "issue": "napisał że jest początkującym, ale ma ławkę 100 kg"}]
-}
-```
-
-`updates` trafiają od razu do `user_profiles`. `conflicts` lądują w `pending_conflicts` — Pitbul zapyta o nie przy kolejnej okazji.
+Jedno wywołanie modelu uruchamiane w tle po każdej wymianie wiadomości. Dostaje ostatnią wymianę i aktualny profil użytkownika. Zwraca dwie listy: aktualizacje profilu (np. nowa waga) i wykryte sprzeczności (np. "napisał że jest początkującym, ale ma ławkę 100 kg"). Aktualizacje zapisywane są od razu. Sprzeczności trafiają do osobnej listy — Pitbul zapyta o nie przy kolejnej okazji.
 
 ---
 
 ### Blacha — sumaryzacja historii (`agents/summarizer.py`) · Claude Haiku 4.5
 
-Pojedyncze wywołanie LLM uruchamiane gdy nazbierało się 15 niepodsumowanych wiadomości. Odpala się również gdy użytkownik zamknie kartę (sendBeacon → `/chat/session-end`) lub gdy klient rozłączy się podczas generowania. Dostaje ostatnie 15 wiadomości i poprzednie podsumowanie. Zwraca tekst max 250 słów, który Pitbul dostaje jako część kontekstu przy każdym kolejnym requestcie.
+Jedno wywołanie modelu uruchamiane gdy nazbierało się 15 wiadomości. Odpala się też gdy użytkownik zamknie kartę przeglądarki lub zerwie połączenie. Dostaje ostatnie 15 wiadomości i poprzednie podsumowanie. Zwraca tekst max 250 słów, który Pitbul dostaje jako kontekst przy każdej kolejnej rozmowie.
 
 ---
 
@@ -284,15 +275,15 @@ Trzy biblioteki zepsuły działający kod w trakcie projektu, każda inaczej: je
 
 Projekt przeszedł trzy rundy testów przed wdrożeniem na produkcję.
 
-| Kategoria | Wynik | Narzędzie |
-|---|---|---|
-| Testy bezpieczeństwa (OWASP Top 10 + specyficzne) | **73/75 PASS** | aiohttp, pytest |
-| Jakość RAG (LLM-as-judge, Claude Haiku) | **11/12 PASS (92%)** | aiohttp, LLM-as-judge |
-| Auth i subskrypcje | **10/10 PASS** | aiohttp |
+| Kategoria | Wynik |
+|---|---|
+| Bezpieczeństwo (OWASP Top 10 + specyficzne dla tej architektury) | **73/75 PASS** |
+| Jakość odpowiedzi AI | **11/12 PASS (92%)** |
+| Logowanie i subskrypcje | **10/10 PASS** |
 
-**Testy bezpieczeństwa** pokrywają: SQL injection, XSS, SSTI, IDOR, wyciek wrażliwych danych, omijanie Stripe, ekstrakcję system promptu (10 technik prompt injection), CORS, mass assignment i walidację Pydantic. 2 WARN (brak security headers — Railway dodaje je na poziomie proxy; rejestracja ujawnia istnienie konta — świadomy trade-off UX).
+**Testy bezpieczeństwa** obejmują próby włamania przez spreparowane dane wejściowe (SQL injection, XSS), próby dostępu do cudzych danych, omijanie płatności, 10 technik wyciągania instrukcji systemu z modelu AI i weryfikację poprawności nagłówków HTTP. 2 drobne ostrzeżenia, oba świadomie zaakceptowane.
 
-**Testy jakości RAG** używają Claude Haiku jako zewnętrznego sędziego (LLM-as-judge): pytanie + odpowiedź agenta + kryterium → ocena 0–10. Grounding 5/5 (agent podaje konkretne liczby i mechanizmy biologiczne, nie ogólniki), off-topic 3/3 (odmowy są precyzyjne), consistency 1/1. Jedyny nieudany test (T2) to false negative — pytanie "jestem zupełnym początkującym" zadane na koncie testowym z profilem zawodnika; agent słusznie wykrył sprzeczność.
+**Testy jakości odpowiedzi** używają drugiego modelu AI jako sędziego — dostaje pytanie, odpowiedź agenta i kryterium oceny, wystawia ocenę 0–10. Agent 5/5 podał konkretne liczby i mechanizmy (nie ogólniki), 3/3 odmówił odpowiedzi na pytania poza zakresem, odpowiedzi na to samo pytanie były spójne. Jedyny nieudany test to celowo sprzeczne pytanie zadane na koncie zaawansowanego zawodnika — agent słusznie wykrył sprzeczność zamiast odpowiedzieć.
 
 ---
 
