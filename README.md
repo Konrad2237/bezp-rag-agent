@@ -6,11 +6,6 @@
 
 ![Chat z AI trenerem](https://github.com/user-attachments/assets/628646ca-4fdb-44bb-bd34-03bccd2c41b2)
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/8d22a273-092c-42ee-b70f-87bc1fd43fef" width="62%" alt="Plan treningowy" />
-  <img src="https://github.com/user-attachments/assets/6596b853-d4db-4389-950b-2d8147d416bb" width="34%" alt="Profil użytkownika" />
-</p>
-
 ---
 
 ## Spis treści
@@ -38,7 +33,12 @@
 
 - **Chat z AI trenerem** — rozmowa z Claude Sonnet 4.6, odpowiedzi zakorzenione w bazie wiedzy — agent przed odpowiedzią przeszukuje 1364 fragmentów z 8 źródeł. Sam decyduje kiedy szukać w bazie, kiedy w internecie, a kiedy wygenerować plan
 - **Quiz startowy** — 22 pytania zbierające profil użytkownika (cel, wiek, waga, poziom, sprzęt, wyniki na ćwiczeniach bazowych). Dane są używane przy każdej odpowiedzi
+
+![Profil użytkownika](https://github.com/user-attachments/assets/6596b853-d4db-4389-950b-2d8147d416bb)
+
 - **Generowanie planu treningowego** — Szybcior (Claude Sonnet) tworzy gotowy plan: ćwiczenia, serie, powtórzenia, progresja, notatki. Plan można edytować przez chat
+
+![Plan treningowy](https://github.com/user-attachments/assets/8d22a273-092c-42ee-b70f-87bc1fd43fef)
 - **Aktualizacja profilu w tle** — po każdej rozmowie Uszatek (Claude Haiku) wyciąga z niej nowe informacje o użytkowniku i aktualizuje profil bez pytania
 - **Kondensacja historii** — co 15 wiadomości Blacha (Claude Haiku) tworzy podsumowanie sesji (max 250 słów), żeby agent zawsze miał kontekst nawet po długich rozmowach
 - **Strona ustawień** — zmiana emaila, hasła, 18 pól profilu, podgląd planu, usunięcie konta
