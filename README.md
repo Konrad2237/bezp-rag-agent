@@ -10,6 +10,7 @@
 - [Funkcjonalności](#funkcjonalności)
 - [Technologie](#technologie)
 - [Jak to działa](#jak-to-działa)
+- [Jak to działa — technicznie](#jak-to-działa--technicznie)
 - [Architektura AI](#architektura-ai)
 - [Struktura projektu](#struktura-projektu)
 - [Czego się nauczyłem](#czego-się-nauczyłem)
@@ -82,6 +83,12 @@
 ---
 
 ## Jak to działa
+
+Użytkownik zadaje pytanie. Zanim model odpowie, system przeszukuje bazę wiedzy złożoną z fragmentów książek i badań naukowych i wybiera te, które są najbardziej trafne dla tego konkretnego pytania. Łączy je z profilem użytkownika — celem, poziomem, dostępnym sprzętem, wynikami siłowni — i dopiero wtedy generuje odpowiedź. W tle, po każdej rozmowie, system automatycznie wyciąga nowe informacje o użytkowniku z treści rozmowy i aktualizuje jego profil. Co 15 wiadomości skraca historię do krótkiego podsumowania, żeby agent zawsze miał aktualny kontekst bez przesyłania całej historii.
+
+---
+
+## Jak to działa — technicznie
 
 ### Flow od inputu do outputu
 
@@ -247,29 +254,29 @@ bezp-rag-agent/
 
 ## Czego się nauczyłem
 
-### Różnica między "chain of prompts" a prawdziwym agentem
+### Kiedy AI naprawdę "myśli", a kiedy tylko wykonuje instrukcje
 
-Przed tym projektem "agent AI" kojarzył mi się z wywołaniem LLM w pętli. LangGraph nauczył mnie czym faktycznie jest ReAct: model widzi wyniki narzędzi i sam decyduje co dalej — nie po z góry ustalonej ścieżce, lecz na podstawie tego co dostał. Pitbul może wywołać `search_knowledge_tool` trzy razy z różnymi zapytaniami, potem `search_web_tool`, a na koniec stwierdzić że ma wystarczająco i odpowiedzieć. Ta autonomia jest użyteczna dokładnie tam gdzie jest nieprzewidywalność — przy pytaniach treningowych zakres potrzebnej wiedzy jest za każdym razem inny.
+Większość systemów AI to seria z góry ustalonych kroków — model dostaje pytanie, przeszukuje bazę, generuje odpowiedź. Pitbul działa inaczej: po każdym kroku sam decyduje co zrobić dalej. Może przeszukać bazę wiedzy trzy razy z różnymi pytaniami, sprawdzić internet, a na końcu stwierdzić że pytanie nie dotyczy treningu i odmówić odpowiedzi. Zrozumiałem że ta autonomia ma sens tylko tam gdzie nie wiadomo z góry ile kroków potrzeba — przy prostych, przewidywalnych zadaniach (jak streszczenie tekstu) to zbędna komplikacja.
 
-### RAG to nie tylko "embeddingi + search"
+### Jak dzielisz tekst źródłowy, tak dobra będzie odpowiedź AI
 
-Strategia chunkowania ma większy wpływ na jakość niż threshold czy top_k. Naiwne dzielenie po 500 znakach rozrywa kontekst w losowych miejscach — zdanie zaczyna się w jednym chunku, kończy w drugim. Wybrałem semantyczne chunkowanie przez GPT-4o-mini: model sam wykrywa przeskoki tematu i tnie tam. 1364 chunki z 8 źródeł, HNSW index w pgvector, threshold 0.3 żeby odrzucać słabe trafienia zamiast zwracać cokolwiek. Testy jakości (LLM-as-judge) pokazały 5/5 na grounding — agent podaje konkretne liczby i mechanizmy, nie ogólniki.
+System przed odpowiedzią szuka w bazie wiedzy fragmentów pasujących do pytania. Jakość tego wyszukiwania zależy głównie od tego jak ten tekst był podzielony na fragmenty. Dzielenie mechanicznie co 500 znaków rozrywa myśli w połowie — model dostaje fragment bez początku lub końca. Wybrałem dzielenie przez AI: inny model czyta tekst i tnie go tam gdzie zmienia się temat. Efekt: gdy ktoś pyta o białko, system zwraca kompletne, sensowne akapity o białku — nie urwany fragment o suplementacji. Testy potwierdziły skuteczność — agent podaje konkretne liczby i cytuje mechanizmy biologiczne, a nie ogólniki.
 
-### Async Python na produkcji ≠ "używam async def"
+### Serwer który "czeka" jest zepsuty, nawet jeśli działa
 
-`supabase-py` jest synchronicznym klientem. Wywołany bezpośrednio w `async def` middleware blokuje event loop FastAPI — każdy request czeka na zakończenie poprzedniego. `run_in_threadpool()` przenosi synchroniczne I/O na thread pool i odblokowuje event loop. To samo z rate limiterem: "wystarczająco szybkie" nie znaczy "atomowe" — 8 równoległych requestów wszystkie odczytały `count=0` przed zapisem. Dopiero `asyncio.Lock` + słownik in-flight dało prawdziwy atomic check.
+Serwer obsługuje wiele requestów równocześnie. Biblioteka do bazy danych, której używam, blokuje jednak cały serwer podczas każdej operacji — dopóki nie sprawdzi tokenu, żaden inny request nie może przejść. To jak kasa w sklepie gdzie kasjer musi skończyć rozmowę przez telefon zanim obsłuży kolejnego klienta. Odkryłem to dopiero przy testach obciążeniowych. Rozwiązanie: biblioteka działa w osobnym wątku, serwer nie czeka na jej wynik. Drugi problem: rate limiter przepuszczał zbyt wiele requestów gdy przychodziły równocześnie, bo wszystkie odczytały "limit nie przekroczony" przed zapisem. Zabezpieczenie: sprawdzenie i zapis jako jedna niepodzielna operacja.
 
-### Koszt jako wymiar architektoniczny, nie afterthought
+### Tańszy model tam gdzie wystarczy, droższy tam gdzie potrzeba
 
-Pierwotnie wszystkie 4 komponenty były agentami na Claude Sonnet. Po refaktorze Uszatek i Blacha działają na Haiku (deterministyczne zadania: ekstrakcja JSON i sumaryzacja nie potrzebują Sonnet). Statyczne bloki systemu promptu Pitbula i Szybciora mają `cache_control: ephemeral` — Anthropic cache TTL 5 minut, przy częstych requestach to ~80% oszczędności na tokenach wejściowych. Razem obniżyło koszt per-wiadomość o ~70% bez widocznej różnicy w jakości.
+Modele AI różnią się jakością i ceną — nawet 15x. Napisałem najpierw wszystko na najmocniejszym modelu, bo "po co oszczędzać na jakości". Po analizie okazało się że dwa komponenty (wyciąganie danych z rozmów i robienie streszczeń) nie potrzebują inteligencji najmocniejszego modelu — wykonują powtarzalne zadanie według wzorca. Przełączenie ich na tańszy model nie pogorszyło jakości, a obniżyło koszt każdej wiadomości o ~70%. Nauczyłem się że dobieranie modelu do zadania to decyzja architektoniczna, nie oszczędzanie.
 
-### Kiedy LangGraph jest overkill
+### Infrastruktura której nie widać, jest infrastrukturą której nie rozumiesz
 
-Uszatek i Blacha zaczęły jako pełne agenty LangGraph — własny StateGraph, własny model, własne węzły. W tygodniu 9 zastąpiłem je pojedynczym `model.invoke([SystemMessage, HumanMessage])`. Graf z jednym węzłem i bez narzędzi to overhead bez żadnej korzyści. Nauczyłem się pytać: "czy ten komponent musi *decydować* o czymś w trakcie działania?" — jeśli nie, to jest wywołanie LLM, nie agent.
+Uszatek i Blacha zaczęły jako pełnoprawne "agenty" z całą infrastrukturą do podejmowania decyzji i wywoływania narzędzi. Okazało się że ta infrastruktura nic nie robiła — oba komponenty miały jeden krok, żadnych decyzji do podjęcia, żadnych narzędzi. Usunąłem całą tę warstwę i zastąpiłem zwykłym wywołaniem modelu. Pytanie które zadaję teraz przed każdym architektonicznym wyborem: czy ten komponent musi zdecydować o czymś w trakcie działania? Jeśli nie — nie potrzebuje specjalnej infrastruktury.
 
-### Zewnętrzne API się zmieniają, trzeba to zakładać z góry
+### Zewnętrzne biblioteki się zmieniają bez pytania o zgodę
 
-stripe-python v5 usunął `.get()` z `StripeObject` — kod crashował przy każdym webhooks evencie. Stripe zmienił strukturę odpowiedzi `Subscription` w API 2026-04-22. supabase-py v2 zmienił chainowanie `.update().eq()` — `.select()` przestało działać na zwróconym builderze. Każda z tych zmian zepsuła działający kod bez ostrzeżenia. Wniosek: izolować dostęp do danych zewnętrznych za cienką warstwą (własna funkcja parsująca), nie rozsiewać `response["key"]` po całym kodzie.
+Trzy biblioteki zepsuły działający kod w trakcie projektu, każda inaczej: jedna usunęła metodę, druga zmieniła strukturę zwracanego obiektu, trzecia zmieniła sposób budowania zapytań. Żadna nie powiadomiła z wyprzedzeniem. Wniosek: dostęp do zewnętrznych bibliotek najlepiej izolować w jednym miejscu — wtedy zmiana biblioteki to zmiana w jednym pliku, nie szukanie wszystkich miejsc w kodzie.
 
 ---
 
