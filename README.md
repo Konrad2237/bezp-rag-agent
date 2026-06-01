@@ -10,6 +10,7 @@
 - [Funkcjonalności](#funkcjonalności)
 - [Technologie](#technologie)
 - [Jak to działa](#jak-to-działa)
+- [Architektura AI](#architektura-ai)
 - [Struktura projektu](#struktura-projektu)
 - [Czego się nauczyłem](#czego-się-nauczyłem)
 - [Autor](#autor)
@@ -143,6 +144,55 @@ Statyczna część system promptu Pitbula i Szybciora oznaczona `cache_control: 
 
 ---
 
+## Architektura AI
+
+System składa się z czterech komponentów AI. Tylko jeden z nich jest prawdziwym agentem.
+
+---
+
+### Pitbul — główny agent (`agents/graph.py`) · Claude Sonnet 4.6
+
+Jedyny komponent z prawdziwą pętlą decyzyjną. Zbudowany jako LangGraph `StateGraph` z 4 węzłami: `fetch_context → orchestrator → tools ↔ orchestrator → post_process`. Przy każdym requestcie dostaje profil użytkownika, ostatnie 6 wiadomości, podsumowanie sesji i listę nierozwiązanych sprzeczności w profilu. Sam decyduje które narzędzie wywołać (i czy w ogóle), ile razy i kiedy zakończyć.
+
+**Narzędzia Pitbula:**
+
+| Narzędzie | Co robi |
+|---|---|
+| `search_knowledge_tool` | Similarity search w pgvector — odpytuje 1364 chunki z 8 źródeł naukowych (top_k=5, threshold=0.3) |
+| `search_web_tool` | Tavily API — dla pytań spoza bazy wiedzy, np. aktualne badania lub sprzęt |
+| `generate_training_plan` | Wywołuje Szybciora i zwraca wygenerowany plan treningowy |
+| `edit_plan_exercise` | Modyfikuje konkretne ćwiczenie w planie (UPDATE w tabeli training_plans) |
+| `resolve_conflict` | Rozwiązuje sprzeczność wykrytą przez Uszatka — aktualizuje profil po potwierdzeniu przez użytkownika |
+
+---
+
+### Szybcior — generator planów (`agents/plan_generator.py`) · Claude Sonnet 4.6
+
+Nie jest agentem — to deterministyczny pipeline LangGraph bez tool calls. Węzeł `setup` pre-injectuje kontekst RAG, historię poprzednich planów i podsumowanie sesji bezpośrednio do HumanMessage. Model generuje pełny plan jako JSON w jednym wywołaniu. LangGraph używany wyłącznie do obsługi retry gdy model zwróci pusty output (limit 5 prób).
+
+---
+
+### Uszatek — ekstrakcja profilu (`agents/extraction.py`) · Claude Haiku 4.5
+
+Pojedyncze wywołanie LLM uruchamiane w tle (`BackgroundTasks`) po każdej wymianie wiadomości. Dostaje ostatnią wymianę (user + agent) i aktualny profil użytkownika. Zwraca JSON:
+
+```json
+{
+  "updates": [{"field": "waga", "value": "85"}],
+  "conflicts": [{"field": "poziom", "issue": "napisał że jest początkującym, ale ma ławkę 100 kg"}]
+}
+```
+
+`updates` trafiają od razu do `user_profiles`. `conflicts` lądują w `pending_conflicts` — Pitbul zapyta o nie przy kolejnej okazji.
+
+---
+
+### Blacha — sumaryzacja historii (`agents/summarizer.py`) · Claude Haiku 4.5
+
+Pojedyncze wywołanie LLM uruchamiane gdy nazbierało się 15 niepodsumowanych wiadomości. Odpala się również gdy użytkownik zamknie kartę (sendBeacon → `/chat/session-end`) lub gdy klient rozłączy się podczas generowania. Dostaje ostatnie 15 wiadomości i poprzednie podsumowanie. Zwraca tekst max 250 słów, który Pitbul dostaje jako część kontekstu przy każdym kolejnym requestcie.
+
+---
+
 ## Struktura projektu
 
 ```
@@ -197,41 +247,29 @@ bezp-rag-agent/
 
 ## Czego się nauczyłem
 
-### Race condition w rate limiterze — `asyncio.Lock` + in-flight dict
+### Różnica między "chain of prompts" a prawdziwym agentem
 
-Testy obciążeniowe (8 równoległych requestów) pokazały że wszyscy przeszli przez limit 5/min. Przyczyna: każda `async` funkcja odczytała `count=0` z bazy zanim jakakolwiek zdążyła zapisać swój request.
+Przed tym projektem "agent AI" kojarzył mi się z wywołaniem LLM w pętli. LangGraph nauczył mnie czym faktycznie jest ReAct: model widzi wyniki narzędzi i sam decyduje co dalej — nie po z góry ustalonej ścieżce, lecz na podstawie tego co dostał. Pitbul może wywołać `search_knowledge_tool` trzy razy z różnymi zapytaniami, potem `search_web_tool`, a na koniec stwierdzić że ma wystarczająco i odpowiedzieć. Ta autonomia jest użyteczna dokładnie tam gdzie jest nieprzewidywalność — przy pytaniach treningowych zakres potrzebnej wiedzy jest za każdym razem inny.
 
-Fix: `_in_flight: dict[str, int]` (liczba aktualnie przetwarzanych requestów per user) chroniony przez `asyncio.Lock`. Sprawdzenie: `DB_count + _in_flight[user_id] >= limit` — atomowe, bez race condition.
+### RAG to nie tylko "embeddingi + search"
 
-### Event loop blocking w middleware
+Strategia chunkowania ma większy wpływ na jakość niż threshold czy top_k. Naiwne dzielenie po 500 znakach rozrywa kontekst w losowych miejscach — zdanie zaczyna się w jednym chunku, kończy w drugim. Wybrałem semantyczne chunkowanie przez GPT-4o-mini: model sam wykrywa przeskoki tematu i tnie tam. 1364 chunki z 8 źródeł, HNSW index w pgvector, threshold 0.3 żeby odrzucać słabe trafienia zamiast zwracać cokolwiek. Testy jakości (LLM-as-judge) pokazały 5/5 na grounding — agent podaje konkretne liczby i mechanizmy, nie ogólniki.
 
-`async def` middleware wywołujący synchroniczne `supabase.auth.get_user()` blokował event loop FastAPI — każdy request czekał na zakończenie weryfikacji JWT poprzedniego.
+### Async Python na produkcji ≠ "używam async def"
 
-Fix: `run_in_threadpool(supabase.auth.get_user, token)` przenosi synchroniczne I/O na thread pool bez blokowania event loop. Ten sam wzorzec wszędzie gdzie sync Supabase w async context.
+`supabase-py` jest synchronicznym klientem. Wywołany bezpośrednio w `async def` middleware blokuje event loop FastAPI — każdy request czeka na zakończenie poprzedniego. `run_in_threadpool()` przenosi synchroniczne I/O na thread pool i odblokowuje event loop. To samo z rate limiterem: "wystarczająco szybkie" nie znaczy "atomowe" — 8 równoległych requestów wszystkie odczytały `count=0` przed zapisem. Dopiero `asyncio.Lock` + słownik in-flight dało prawdziwy atomic check.
 
-### Wyciek zadań przy rozłączeniu SSE
+### Koszt jako wymiar architektoniczny, nie afterthought
 
-Po zamknięciu karty przeglądarki agent LangGraph kontynuował generowanie i spalał tokeny — task nie wiedział o rozłączeniu klienta.
+Pierwotnie wszystkie 4 komponenty były agentami na Claude Sonnet. Po refaktorze Uszatek i Blacha działają na Haiku (deterministyczne zadania: ekstrakcja JSON i sumaryzacja nie potrzebują Sonnet). Statyczne bloki systemu promptu Pitbula i Szybciora mają `cache_control: ephemeral` — Anthropic cache TTL 5 minut, przy częstych requestach to ~80% oszczędności na tokenach wejściowych. Razem obniżyło koszt per-wiadomość o ~70% bez widocznej różnicy w jakości.
 
-Fix: sprawdzanie `request.is_disconnected()` w pętli keepalive co 20 sekund. Po wykryciu: `agent_task.cancel()` + `asyncio.create_task(background_tasks(...))` — Blacha i Uszatek wywołują się mimo to.
+### Kiedy LangGraph jest overkill
 
-### Kaskada pustej wiadomości blokująca przyszłe requesty
+Uszatek i Blacha zaczęły jako pełne agenty LangGraph — własny StateGraph, własny model, własne węzły. W tygodniu 9 zastąpiłem je pojedynczym `model.invoke([SystemMessage, HumanMessage])`. Graf z jednym węzłem i bez narzędzi to overhead bez żadnej korzyści. Nauczyłem się pytać: "czy ten komponent musi *decydować* o czymś w trakcie działania?" — jeśli nie, to jest wywołanie LLM, nie agent.
 
-Rzadki bug: pusta odpowiedź agenta zapisana do DB → pobrana jako `AIMessage("")` w historii → Anthropic API zwraca 400 dla każdego kolejnego requestu tego użytkownika, bez możliwości naprawy przez UI.
+### Zewnętrzne API się zmieniają, trzeba to zakładać z góry
 
-Fix: filtrowanie pustych wiadomości w `fetch_context` przed budowaniem listy dla Anthropic. Jeden punkt naprawy zamiast sprawdzania w każdym routerze.
-
-### `StripeObject.get()` usunięte w stripe-python v5+
-
-`StripeObject` przestał wspierać metodę `.get()` — każdy webhook event crashował z `AttributeError`.
-
-Fix: `event_dict = json.loads(payload)` zamiast parsowania StripeObject — dane webhooka jako zwykły dict Python. Przy odczycie `Subscription`: `sub["key"]` z try/except zamiast `.get()`.
-
-### Agenty LangGraph → pojedyncze wywołania LLM
-
-Uszatek i Blacha były początkowo pełnymi agentami z własnym LangGraph StateGraph. Refaktor w tygodniu 9 zamienił je na `model.invoke([SystemMessage, HumanMessage])`.
-
-Wniosek: LangGraph jest uzasadniony gdy komponent naprawdę musi decydować o narzędziach i iterować. Dla deterministycznych zadań (ekstrakcja JSON, sumaryzacja tekstu) to overhead bez żadnej korzyści.
+stripe-python v5 usunął `.get()` z `StripeObject` — kod crashował przy każdym webhooks evencie. Stripe zmienił strukturę odpowiedzi `Subscription` w API 2026-04-22. supabase-py v2 zmienił chainowanie `.update().eq()` — `.select()` przestało działać na zwróconym builderze. Każda z tych zmian zepsuła działający kod bez ostrzeżenia. Wniosek: izolować dostęp do danych zewnętrznych za cienką warstwą (własna funkcja parsująca), nie rozsiewać `response["key"]` po całym kodzie.
 
 ---
 
