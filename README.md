@@ -2,19 +2,20 @@
 
 > AI trener odpowiadający na podstawie bazy wiedzy z książek i badań naukowych — nie z ogólnej wiedzy modelu.
 
+**Demo:** [bezp-rag-agent.vercel.app](https://bezp-rag-agent.vercel.app)
+
 ---
 
 ## Spis treści
 
 - [Co robi](#co-robi)
 - [Funkcjonalności](#funkcjonalności)
+- [Wyniki testów](#wyniki-testów)
 - [Jak to działa](#jak-to-działa)
   - [Technicznie](#technicznie)
 - [Architektura AI](#architektura-ai)
 - [Technologie](#technologie)
-- [Jak uruchomić](#jak-uruchomić)
 - [Struktura projektu](#struktura-projektu)
-- [Wyniki testów](#wyniki-testów)
 - [Czego się nauczyłem](#czego-się-nauczyłem)
 - [Autor](#autor)
 
@@ -36,6 +37,22 @@
 - **Strona ustawień** — zmiana emaila, hasła, 18 pól profilu, podgląd planu, usunięcie konta
 - **Subskrypcja Stripe** — płatność, automatyczne potwierdzenia, anulowanie z zachowaniem dostępu do końca okresu
 - **Limit wiadomości** — 5/minutę i 100/dzień, liczony atomowo — równoległe requesty nie obchodzą limitu
+
+---
+
+## Wyniki testów
+
+Projekt przeszedł trzy rundy testów przed wdrożeniem na produkcję.
+
+| Kategoria | Wynik |
+|---|---|
+| Bezpieczeństwo (OWASP Top 10 + specyficzne dla tej architektury) | **73/75 PASS** |
+| Jakość odpowiedzi AI | **11/12 PASS (92%)** |
+| Logowanie i subskrypcje | **10/10 PASS** |
+
+**Testy bezpieczeństwa** obejmują próby włamania przez spreparowane dane wejściowe (SQL injection, XSS), próby dostępu do cudzych danych, omijanie płatności, 10 technik wyciągania instrukcji systemu z modelu AI i weryfikację poprawności nagłówków HTTP. 2 drobne ostrzeżenia, oba świadomie zaakceptowane.
+
+**Testy jakości odpowiedzi** używają drugiego modelu AI jako sędziego — dostaje pytanie, odpowiedź agenta i kryterium oceny, wystawia ocenę 0–10. Agent 5/5 podał konkretne liczby i mechanizmy (nie ogólniki), 3/3 odmówił odpowiedzi na pytania poza zakresem, odpowiedzi na to samo pytanie były spójne. Jedyny nieudany test to celowo sprzeczne pytanie zadane na koncie zaawansowanego zawodnika — agent słusznie wykrył sprzeczność zamiast odpowiedzieć.
 
 ---
 
@@ -185,76 +202,6 @@ Jedno wywołanie modelu uruchamiane gdy nazbierało się 15 wiadomości. Odpala 
 
 ---
 
-## Jak uruchomić
-
-### Wymagania
-
-- Python 3.11+, Node.js 20+
-- Konto [Supabase](https://supabase.com) z włączonym rozszerzeniem `pgvector`
-- Klucze API: Anthropic, OpenAI, Tavily, Stripe
-
-### Backend
-
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # Linux/macOS
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Zmienne środowiskowe
-
-Utwórz `.env` w katalogu `backend/`:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-TAVILY_API_KEY=tvly-...
-
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
-SUPABASE_ANON_KEY=eyJ...
-
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_WEEK=price_...
-STRIPE_PRICE_MONTH=price_...
-STRIPE_PRICE_QUARTER=price_...
-
-ALLOWED_ORIGINS=http://localhost:3000
-```
-
-Utwórz `frontend/.env.local`:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-### Baza wiedzy
-
-Przed pierwszym uruchomieniem wgraj bazę wiedzy do Supabase:
-
-```bash
-# Umieść plik .docx w katalogu projektu
-python scripts/ingest.py
-```
-
-Skrypt dzieli tekst na fragmenty semantyczne, generuje embeddingi i wgrywa do Supabase. Prosi o potwierdzenie przed wgraniem.
-
----
-
 ## Struktura projektu
 
 ```
@@ -304,22 +251,6 @@ bezp-rag-agent/
 │
 └── docs/                        # ADR, architektura, schemat DB, system prompty (nie deployowane)
 ```
-
----
-
-## Wyniki testów
-
-Projekt przeszedł trzy rundy testów przed wdrożeniem na produkcję.
-
-| Kategoria | Wynik |
-|---|---|
-| Bezpieczeństwo (OWASP Top 10 + specyficzne dla tej architektury) | **73/75 PASS** |
-| Jakość odpowiedzi AI | **11/12 PASS (92%)** |
-| Logowanie i subskrypcje | **10/10 PASS** |
-
-**Testy bezpieczeństwa** obejmują próby włamania przez spreparowane dane wejściowe (SQL injection, XSS), próby dostępu do cudzych danych, omijanie płatności, 10 technik wyciągania instrukcji systemu z modelu AI i weryfikację poprawności nagłówków HTTP. 2 drobne ostrzeżenia, oba świadomie zaakceptowane.
-
-**Testy jakości odpowiedzi** używają drugiego modelu AI jako sędziego — dostaje pytanie, odpowiedź agenta i kryterium oceny, wystawia ocenę 0–10. Agent 5/5 podał konkretne liczby i mechanizmy (nie ogólniki), 3/3 odmówił odpowiedzi na pytania poza zakresem, odpowiedzi na to samo pytanie były spójne. Jedyny nieudany test to celowo sprzeczne pytanie zadane na koncie zaawansowanego zawodnika — agent słusznie wykrył sprzeczność zamiast odpowiedzieć.
 
 ---
 
