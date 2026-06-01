@@ -286,5 +286,4 @@ Trzy biblioteki zepsuły działający kod w trakcie projektu, każda inaczej: je
 
 **Konrad Pochwała**
 
-- GitHub: [DO UZUPEŁNIENIA]
-- LinkedIn: [DO UZUPEŁNIENIA]
+[wizytowka-ivory.vercel.app](https://wizytowka-ivory.vercel.app)
